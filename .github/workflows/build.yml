@@ -1,4 +1,4 @@
-# Tự động đóng gói phần mềm cho Windows (.exe) và macOS (.dmg)
+# Tự động đóng gói phần mềm cho Windows (.exe) và macOS (.dmg + .zip)
 name: Build Windows & Mac
 
 on:
@@ -7,12 +7,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Cai thu vien
+        run: npm install --no-audit --no-fund
+      - name: Dong goi Windows
+        run: npx electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TronDeThi-Windows
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  mac:
+    runs-on: macos-latest
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
@@ -22,14 +36,16 @@ jobs:
           node-version: 20
       - name: Cai thu vien
         run: npm install --no-audit --no-fund
-      - name: Dong goi
-        run: npx electron-builder --publish never
-      - name: Tai len ket qua
-        uses: actions/upload-artifact@v4
+      - name: Dong goi Mac (zip)
+        run: npx electron-builder --mac zip --arm64 --x64 --publish never
+      - name: Dong goi Mac (dmg)
+        continue-on-error: true
+        run: npx electron-builder --mac dmg --arm64 --x64 --publish never
+      - uses: actions/upload-artifact@v4
         with:
-          name: TronDeThi-${{ runner.os }}
+          name: TronDeThi-Mac
           path: |
-            dist/*.exe
             dist/*.dmg
+            dist/*.zip
           if-no-files-found: error
           retention-days: 30
