@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Làm bài trực tuyến</title>
+<meta name="description" content="Làm bài kiểm tra trực tuyến — phần mềm của Lê Duy Nam, GV Trường Cao đẳng Dầu khí">
+<meta name="robots" content="noindex">
+<link rel="icon" href="img/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  body.exam { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  body.exam img { -webkit-user-drag: none; pointer-events: none; }
+  @media print { body * { display: none !important; } body::after { content: 'Không được in bài thi'; display: block; } }
+  .start { max-width: 720px; margin: 26px auto; }
+  .exinfo { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: .95rem; margin: 10px 0 4px; }
+  .exinfo dt { color: var(--muted); } .exinfo dd { margin: 0; font-weight: 600; }
+  .rules { font-size: .88rem; color: var(--ink-2); padding-left: 18px; margin: 8px 0; }
+  .qbar { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); }
+  .qbar .wrap { display: flex; align-items: center; gap: 12px; min-height: 64px; }
+  .prog { height: 4px; background: var(--line); } .prog > i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+  .timer { position: relative; width: 52px; height: 52px; flex: none; }
+  .timer svg { transform: rotate(-90deg); }
+  .timer b { position: absolute; inset: 0; display: grid; place-items: center; font-size: .85rem; font-variant-numeric: tabular-nums; }
+  .timer.low b { color: var(--bad); }
+  .qcard { max-width: 860px; margin: 22px auto; }
+  .qnum { font-size: .8rem; font-weight: 700; color: var(--brand-2); letter-spacing: .5px; text-transform: uppercase; }
+  .stem { font-size: 1.15rem; line-height: 1.6; margin: 6px 0 18px; }
+  .opts { display: grid; gap: 10px; }
+  .optb { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; padding: 13px 14px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font: inherit; font-size: 1.02rem; cursor: pointer; transition: border-color .12s, background .12s; }
+  .optb:hover { border-color: var(--brand-2); }
+  .optb .lt { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--soft); border: 1px solid var(--line); }
+  .optb.sel { border-color: var(--brand-2); background: rgba(15,90,133,.08); }
+  .optb.sel .lt { background: var(--brand-2); color: #fff; border-color: var(--brand-2); }
+  .essay textarea { min-height: 220px; font-size: 1rem; user-select: text; -webkit-user-select: text; }
+  .nav { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
+  #shield { position: fixed; inset: 0; z-index: 90; background: #04121b; color: #fff; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+  #shield.on { display: flex; }
+  #wm { position: fixed; inset: 0; z-index: 80; pointer-events: none; opacity: .09; background-repeat: repeat; }
+  .pal { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 7px; }
+  .pb { height: 38px; border-radius: 9px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+  .pb.ans { background: var(--brand-2); border-color: var(--brand-2); color: #fff; }
+  .pb.flag { box-shadow: inset 0 -4px 0 var(--accent); border-color: var(--accent); }
+  .pb.cur { outline: 3px solid rgba(232,164,0,.55); outline-offset: 1px; }
+  .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid var(--line); vertical-align: -1px; margin: 0 3px 0 8px; }
+  .lg.ans { background: var(--brand-2); border-color: var(--brand-2); } .lg.flag { border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+  .nav .btn[disabled] { opacity: .45; }
+  .done { max-width: 620px; margin: 40px auto; text-align: center; }
+  .bigscore { font-size: 3.4rem; font-weight: 800; color: var(--brand); line-height: 1.1; }
+  .review .qprev .opt.ok { color: var(--ok); font-weight: 600; } .review .opt.badc { color: var(--bad); }
+</style>
+</head>
+<body>
+<div id="app"><div class="wrap" style="padding:40px 16px"><p class="muted">Đang tải đề…</p></div></div>
+<div id="wm"></div>
+<div id="shield"><div><h2 style="color:#fff">Nội dung bài thi đã được ẩn</h2><p id="shieldMsg">Bạn vừa rời khỏi cửa sổ làm bài. Lần rời màn hình đã được ghi nhận và gửi cho giáo viên.</p><button class="btn accent" id="shieldBack">Quay lại làm bài</button></div></div>
+<div class="modal-bg" id="modal"><div class="modal" id="modalBody"></div></div>
+<script src="js/config.js"></script>
+<script src="js/common.js"></script>
+<script src="js/core.js"></script>
+<script src="js/student.js"></script>
+</body>
+</html>

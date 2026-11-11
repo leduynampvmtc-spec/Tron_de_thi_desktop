@@ -1,0 +1,36 @@
+# Tự động đóng gói phần mềm cho Windows (.exe) và macOS (.dmg)
+# Chạy khi upload/sửa file lên nhánh main, hoặc bấm "Run workflow" trong tab Actions.
+name: Build Windows & Mac
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Cai thu vien
+        run: npm install --no-audit --no-fund
+      - name: Dong goi
+        run: npx electron-builder --publish never
+      - name: Tai len ket qua
+        uses: actions/upload-artifact@v4
+        with:
+          name: TronDeThi-${{ runner.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+          if-no-files-found: error
+          retention-days: 30

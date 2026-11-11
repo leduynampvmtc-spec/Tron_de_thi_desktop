@@ -1,0 +1,56 @@
+{
+  "name": "tron-de-thi-online",
+  "productName": "Tron De Thi Online",
+  "version": "1.5.0",
+  "description": "Phần mềm trộn đề thi trắc nghiệm, điền khuyết, tự luận — Lê Duy Nam, Giảng viên Trường Cao đẳng Dầu khí",
+  "author": "Lê Duy Nam <Truong Cao dang Dau khi>",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "vn.edu.pvcollege.trondethi",
+    "productName": "Tron De Thi Online",
+    "copyright": "Lê Duy Nam — Trường Cao đẳng Dầu khí",
+    "asar": false,
+    "directories": { "buildResources": "build", "output": "dist" },
+    "files": ["main.js", "app-config.json", "build/icon.png", "app/**/*", "package.json"],
+    "afterPack": "build/afterPack.js",
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Trộn đề thi Online",
+      "artifactName": "TronDeThi-CaiDat-Windows-${version}.${ext}"
+    },
+    "portable": { "artifactName": "TronDeThi-ChayNgay-Windows-${version}.${ext}" },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.education",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "artifactName": "TronDeThi-Mac-${arch}-${version}.${ext}"
+    },
+    "dmg": { "title": "Tron De Thi Online ${version}" }
+  }
+}

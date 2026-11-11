@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hướng dẫn cài đặt</title>
+<meta name="description" content="Hướng dẫn cài đặt phần mềm Trộn đề thi Online — Lê Duy Nam, GV Trường Cao đẳng Dầu khí">
+<link rel="icon" href="img/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  .doc { max-width: 860px; margin: 24px auto 40px; }
+  .doc h2 { margin-top: 6px; display: flex; gap: 10px; align-items: center; }
+  .doc h2 .n { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #2a1d00; display: grid; place-items: center; font-size: 1rem; flex: none; }
+  .doc ol, .doc ul { padding-left: 22px; } .doc li { margin: 5px 0; }
+  code, kbd { font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--soft); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; font-size: .88em; }
+  pre { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow: auto; font-size: .85rem; }
+  .codebox { margin: 8px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  .codebox summary { cursor: pointer; font-weight: 600; color: var(--brand-2); }
+  .codebox pre { max-height: 360px; margin: 8px 0 0; white-space: pre; font-size: .78rem; }
+</style>
+</head>
+<body>
+<header class="topbar"><div class="wrap"><a class="brand" href="index.html"><span class="logo">Q</span><span>Trộn đề thi Online<small>Hướng dẫn cài đặt &amp; sử dụng</small></span></a><span class="spacer"></span><a class="btn sm" href="giaovien.html">Trang giáo viên</a></div></header>
+<main class="wrap doc">
+  <div class="card">
+    <p style="margin-top:0">Để dùng phần mềm, mỗi thầy/cô cần <b>1 Google Sheet riêng</b> làm “máy chủ” (nơi lưu đề, phát đề cho từng học sinh, chấm điểm và lưu kết quả). Việc này chỉ làm <b>1 lần</b>, sau đó dùng cho mọi bài, mọi lớp.</p>
+    <div class="msg info">Chưa cài Google Sheet vẫn dùng được nút <b>“Xem thử như học sinh”</b> để kiểm tra đề ngay trên máy.</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">1</span> Tạo Google Sheet máy chủ (1 lần, khoảng 5 phút)</h2>
+    <ol>
+      <li>Vào <a href="https://sheets.google.com" target="_blank" rel="noopener">sheets.google.com</a> → tạo bảng tính mới, đặt tên ví dụ <b>“Tron de thi – Ket qua – [Tên thầy/cô]”</b>.</li>
+      <li>Menu <b>Tiện ích mở rộng → Apps Script</b>. Xóa hết đoạn mã mẫu, dán <b>toàn bộ</b> mã bên dưới (bấm <b>Sao chép toàn bộ mã</b> rồi dán vào).
+        <div class="codebox">
+          <div class="row" style="margin-bottom:8px"><button class="btn sm primary" id="copyCode" type="button">Sao chép toàn bộ mã</button><a class="btn sm" href="code/Code.txt" download="Code.gs">Tải file Code.gs</a><span class="muted" id="codeInfo" style="font-size:.85rem"></span></div>
+          <details><summary>Xem mã Code.gs</summary><pre id="codePre">Đang tải mã…</pre></details>
+        </div></li>
+      <li>Ở dòng đầu, đổi mật khẩu giáo viên: <code>var TEACHER_KEY = 'PVCollege@2026';</code> → mật khẩu riêng của thầy/cô. Bấm biểu tượng <b>Lưu</b>.</li>
+      <li>Ở ô chọn hàm phía trên, chọn <b>caiDat</b> → bấm <b>Chạy</b> → <b>Xem xét quyền</b> → chọn tài khoản Gmail → <b>Nâng cao</b> → <b>Đi tới … (không an toàn)</b> → <b>Cho phép</b>. (Đây là mã do chính thầy/cô dán vào nên Google cảnh báo như vậy.)</li>
+      <li>Bấm <b>Triển khai → Tùy chọn triển khai mới</b> → biểu tượng bánh răng → <b>Ứng dụng web</b>:
+        <ul><li>Thực thi với tư cách: <b>Tôi</b></li><li>Người có quyền truy cập: <b>Bất kỳ ai</b> (để học sinh không cần đăng nhập)</li></ul>
+        Bấm <b>Triển khai</b> → sao chép <b>URL ứng dụng web</b> (kết thúc bằng <code>/exec</code>).</li>
+      <li>Mở <a href="giaovien.html">Trang giáo viên</a> → mục <b>Cài đặt máy chủ</b> → dán URL và mật khẩu → bấm <b>Lưu &amp; kiểm tra kết nối</b>. Thấy “Kết nối tốt — mật khẩu đúng” là xong.</li>
+    </ol>
+    <div class="msg warn">Chỉ cần <b>1 bản triển khai duy nhất</b>. Không tạo triển khai mới cho mỗi bài kiểm tra. Khi có bản cập nhật: dán đè mã mới → <b>Triển khai → Quản lý các tùy chọn triển khai → chọn bản đang dùng → ✎ → Phiên bản mới → Triển khai</b> (URL giữ nguyên, link đã gửi vẫn dùng được).</div>
+    <p>Kết quả lưu trong 3 trang tính của Google Sheet: <b>DeThi</b> (các đề), <b>LuotThi</b> (học sinh đang làm), <b>KetQua</b> (điểm). Đáp án chỉ nằm trên máy chủ, học sinh không xem được.</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span> Soạn đề theo file Word mẫu</h2>
+    <div class="msg info row" style="justify-content:space-between"><span>Tải <b>file Word mẫu</b> — có sẵn ví dụ cho từng loại câu, chỉ cần soạn theo.</span><a class="btn sm primary" href="mau/Mau_soan_de_Tron_de_thi.docx" download>Tải mẫu soạn đề (.docx)</a></div>
+    <p><b>Trắc nghiệm:</b> mỗi câu bắt đầu bằng <code>Câu 1:</code>, các phương án <code>A)</code> <code>B)</code> <code>C)</code> <code>D)</code> (hoặc <code>A.</code>). Đáp án đúng là nhãn được <u>gạch chân</u> (cũng nhận nhãn tô đỏ / highlight / có dấu <code>*A)</code>). Nhiều đáp án đúng thì gạch chân tất cả. Có thể ghi nhiều phương án trên 1 dòng. Phương án kiểu “Các đáp án còn lại đều đúng”, “Ý kiến khác”, “Tất cả…” được <b>giữ nguyên vị trí</b> khi trộn.</p>
+    <p><b>Điền khuyết:</b> viết đáp án trong ngoặc vuông ngay chỗ trống: <code>She [goes] to school.</code> Nhiều đáp án chấp nhận dùng dấu <code>/</code>: <code>My father [is/’s] a doctor.</code> Hoặc để chỗ trống <code>……..</code> / <code>____</code> rồi xuống dòng <code>Đáp án: 100; 0</code> (các chỗ trống ngăn cách bằng <code>;</code>). Chấm tự động, không phân biệt hoa/thường, mỗi chỗ trống đúng được một phần điểm.</p>
+    <p><b>Tự luận:</b> câu không có phương án A, B, C… Điểm ghi ngay sau số câu: <code>Câu 5 (2 điểm):</code>. Đáp án gợi ý ghi sau <code>Đáp án:</code> hoặc <code>Hướng dẫn chấm:</code>. Giáo viên chấm câu tự luận ở mục Kết quả.</p>
+    <p><b>Kiểu bảng 2 cột:</b> hàng <code>1.</code> | nội dung câu hỏi; hàng <code>A)</code> | phương án; hàng <code>Đáp án</code> | <code>A</code>.</p>
+    <p>Công thức MathType / Equation hiển thị tự động. Tiêu đề phần (“PHẦN I. TRẮC NGHIỆM”) và “--- HẾT ---” được bỏ qua. Lưu file dạng <b>.docx</b>.</p>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span> Nạp file đề vào phần mềm</h2>
+    <ol>
+      <li>Mở <a href="giaovien.html">Trang giáo viên</a> → tab <b>1. Ngân hàng câu hỏi</b>.</li>
+      <li>Kéo thả file <b>.docx</b> vào khung (hoặc bấm để chọn file). Chọn được nhiều file một lúc — mỗi file là 1 ngân hàng câu hỏi.</li>
+      <li>Phần mềm báo số câu nhận được (trắc nghiệm / điền khuyết / tự luận). Câu nào cần kiểm tra sẽ được đánh dấu — bấm <b>Xem / sửa</b> để đặt lại đáp án, thời gian hoặc điểm riêng cho từng câu, bỏ bớt câu.</li>
+      <li>Ngân hàng được lưu trên trình duyệt của máy đang dùng. Muốn dùng trên máy khác: <b>Cài đặt máy chủ → Xuất file sao lưu</b>, sang máy kia <b>Nhập file sao lưu</b>.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span> Tạo đề và gửi link cho học sinh</h2>
+    <ol>
+      <li>Tab <b>2. Tạo đề &amp; link</b>: nhập loại bài (kiểm tra thường xuyên, định kỳ, kiểm tra phần, thi thử kết thúc môn, đề thi lý thuyết mô đun…), tên môn học/mô đun, nội dung, lớp.</li>
+      <li><b>Nhóm câu hỏi:</b> ví dụ <i>Ngẫu nhiên 60 câu</i> từ ngân hàng 1 + <i>Ngẫu nhiên 30 câu</i> từ ngân hàng 2, hoặc <i>Chỉ định</i> câu <code>1-10, 15</code>. Số câu ghi <code>25-30</code> để mỗi em có số câu khác nhau.</li>
+      <li><b>Thời gian &amp; số lần làm bài:</b> giờ bắt đầu cho vào làm, giờ hết hạn vào làm, giờ kết thúc (tự nộp), số lần được làm hoặc <b>không giới hạn (luyện tập)</b>. Ba nút mẫu điền sẵn: <b>Kiểm tra / thi</b>, <b>Bài dễ / gỡ điểm</b>, <b>Ôn tập</b>.</li>
+      <li><b>Cách làm bài:</b> <i>Từng câu</i> (mỗi câu đếm ngược riêng, không quay lại) hoặc <i>Tự do</i> (quay lại xem/sửa câu trước, thời gian không giới hạn hoặc tổng thời gian cả bài).</li>
+      <li><b>Bắt buộc làm bằng phần mềm Windows / Mac</b> (không bắt buộc): bật khi thi ở phòng máy của Trường đã cài phần mềm (chặn chụp màn hình thật) — học sinh mở link bằng điện thoại / trình duyệt sẽ không vào làm được. Học sinh làm trên điện thoại thì <b>để trống</b> ô này.</li>
+      <li><b>Nhạc nền</b> (không bắt buộc, cuối mục Cài đặt làm bài): dán link YouTube (video cho phép nhúng), link Google Drive (file chia sẻ “Bất kỳ ai có đường liên kết”) hoặc link file .mp3 → bấm <b>Nghe thử</b> để kiểm tra → chọn âm lượng. Nhạc phát khi học sinh bấm “Bắt đầu làm bài”, lặp lại đến khi nộp; học sinh có nút <b>🔊 Nhạc</b> để tắt/bật.</li>
+      <li>Bấm <b>Xem thử như học sinh</b> để kiểm tra, rồi <b>Lưu đề lên máy chủ &amp; tạo link</b> → <b>Sao chép</b> link → gửi qua Zalo / Teams / Email. Mỗi học sinh mở link, nhập <b>Họ và tên, Lớp</b> rồi nhận 1 đề trộn riêng.</li>
+      <li>Tab <b>3. Kết quả</b>: xem điểm trực tiếp, ai đang làm câu nào, số lần vi phạm; chấm câu tự luận; <b>Đóng đề</b> khi hết giờ; <b>Cho làm lại</b> nếu cần; <b>Xuất Excel</b> bảng điểm.</li>
+    </ol>
+  </div>
+  <div class="card">
+    <h2><span class="n">5</span> Nhập điểm vào file KQHT (.xlsm) — nút Quizz (App)</h2>
+    <ol>
+      <li>Mở file KQHT có nút <b>Quizz (App)</b> và <b>Mở App trộn đề</b> ở tab <b>Tính điểm</b>, nhóm <i>Điểm online</i>.</li>
+      <li>Nạp module 1 lần: <b>Windows</b> <kbd>Alt</kbd>+<kbd>F11</kbd> → <b>File → Import File…</b> → chọn <code>QuizApp_Nhap.bas</code>. <b>Mac</b>: <b>Công cụ → Macro → Trình soạn thảo Visual Basic</b> → <b>File → Import File…</b>. Đóng cửa sổ VBA và <b>Lưu</b> file.</li>
+      <li>Mỗi lần nhập điểm: trên trang giáo viên bấm <b>Xuất Excel</b> → trong file KQHT bấm <b>Quizz (App)</b> → chọn file <code>KetQua_….xlsx</code> (chọn được nhiều file) → gõ cột cần ghi (mặc định là cột trống kế tiếp; <code>P</code> = Thi LT). Điểm được ghép theo <b>Họ và tên</b> (không phân biệt dấu/hoa thường); em nào có nhiều bài lấy điểm cao nhất; em vắng được liệt kê và hỏi có ghi 0 không.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">!</span> Về chống chụp màn hình</h2>
+    <p>Trình duyệt web <b>không thể chặn tuyệt đối</b> việc chụp màn hình (nhất là chụp bằng điện thoại khác). Phần mềm áp dụng các biện pháp hạn chế và <b>ghi nhận vi phạm gửi về giáo viên</b>:</p>
+    <ul>
+      <li>Che kín nội dung ngay khi học sinh rời cửa sổ, chuyển tab/ứng dụng, mở công cụ cắt màn hình, thoát toàn màn hình; bấm <kbd>PrtSc</kbd> hoặc <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>3/4/5</kbd>.</li>
+      <li>Chặn chuột phải, bôi đen, sao chép, in trang; hình mờ <b>Họ tên – Lớp</b> phủ khắp màn hình (ảnh chụp lọt ra ngoài biết ngay của ai).</li>
+      <li>Đạt số lần vi phạm giáo viên đặt → tự động nộp bài. Ở chế độ <i>Từng câu</i>, mỗi câu chỉ hiện 1 lần, có đồng hồ riêng, không quay lại được.</li>
+    </ul>
+  </div>
+  <div class="card">__AUTHOR__</div>
+</main>
+<script src="js/common.js"></script>
+<script>
+  document.body.innerHTML = document.body.innerHTML.replace('__AUTHOR__', QA.AUTHOR_HTML);
+  (function () {
+    var code = '', pre = document.getElementById('codePre'), info = document.getElementById('codeInfo');
+    fetch('code/Code.txt', { cache: 'no-cache' }).then(function (r) { if (!r.ok) throw 0; return r.text(); }).then(function (t) {
+      code = t; pre.textContent = t; info.textContent = t.split('\n').length + ' dòng';
+    }).catch(function () { pre.textContent = 'Không tải được mã. Bấm "Tải file Code.gs" hoặc liên hệ thầy Lê Duy Nam.'; });
+    document.getElementById('copyCode').onclick = function () {
+      if (!code) return QA.toast('Mã chưa tải xong', 'bad');
+      var done = function () { QA.toast('Đã sao chép ' + code.split('\n').length + ' dòng mã — dán vào Apps Script', 'ok'); };
+      if (navigator.clipboard) navigator.clipboard.writeText(code).then(done).catch(fallback); else fallback();
+      function fallback() { var ta = document.createElement('textarea'); ta.value = code; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) { QA.toast('Không sao chép được — hãy bấm Tải file', 'bad'); } ta.remove(); }
+    };
+  })();
+</script>
+</body>
+</html>

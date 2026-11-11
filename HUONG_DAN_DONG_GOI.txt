@@ -1,0 +1,53 @@
+TRỘN ĐỀ THI ONLINE — BẢN ỨNG DỤNG WINDOWS & MAC
+Phần mềm được tạo bởi Lê Duy Nam — Giảng viên Trường Cao đẳng Dầu khí
+=====================================================================
+
+Bản ứng dụng mở chính trang web phần mềm của thầy (luôn là bản mới nhất), chạy trong cửa sổ riêng
+như phần mềm bình thường. Điểm thêm so với trình duyệt:
+  • Trang làm bài (thi.html) được bật CHỐNG CHỤP / QUAY MÀN HÌNH của hệ điều hành:
+      - Windows 10 (bản 2004 trở lên) và Windows 11: cửa sổ bài thi bị loại khỏi ảnh chụp PrtSc,
+        Snipping Tool, phần mềm quay màn hình, chia sẻ màn hình Zoom/Teams (hiện màu đen).
+      - macOS: chặn ảnh chụp/quay thông thường; một số phiên bản macOS mới có thể không chặn hoàn toàn.
+    Chụp bằng điện thoại khác thì vẫn không chặn được — hình mờ Họ tên – Lớp vẫn hiện như bản web.
+  • Mất mạng thì tự dùng bản trang web đóng gói sẵn (vẫn soạn ngân hàng câu hỏi được).
+
+---------------------------------------------------------------------
+BƯỚC 1 — Điền địa chỉ trang web
+---------------------------------------------------------------------
+Mở file app-config.json, điền địa chỉ trang web phần mềm vào siteUrl, ví dụ:
+    "siteUrl": "https://ten-cua-thay.github.io/tron-de-thi/"
+(để trống thì ứng dụng chạy bản đóng gói sẵn nhưng KHÔNG tạo được link gửi học sinh).
+
+---------------------------------------------------------------------
+BƯỚC 2 — Cho GitHub tự đóng gói ra file cài đặt (khoảng 10 phút)
+---------------------------------------------------------------------
+1. Trên GitHub tạo repository MỚI, chọn PRIVATE (riêng tư), ví dụ: tron-de-thi-desktop.
+2. Upload toàn bộ file trong thư mục này: package.json, main.js, app-config.json, thư mục build, thư mục app.
+3. Tạo file quy trình đóng gói: bấm Add file → Create new file → ô tên file gõ đúng:
+       .github/workflows/build.yml
+   rồi dán toàn bộ nội dung file build-workflow.yml vào → Commit changes.
+   (Thư mục .github là thư mục ẩn nên kéo thả trên Mac thường bị sót — tạo bằng cách này cho chắc.)
+4. Vào tab Actions → thấy "Build Windows & Mac" đang chạy (chấm vàng). Chờ đến khi có dấu ✓ xanh.
+5. Bấm vào lần chạy đó → kéo xuống mục Artifacts → tải:
+       TronDeThi-Windows : TronDeThi-CaiDat-Windows-x.x.x.exe (bản cài đặt)
+                           TronDeThi-ChayNgay-Windows-x.x.x.exe (bản chạy ngay, không cần cài)
+       TronDeThi-macOS   : TronDeThi-Mac-arm64-x.x.x.dmg (Mac chip Apple M1/M2/M3/M4)
+                           TronDeThi-Mac-x64-x.x.x.dmg   (Mac chip Intel)
+   Muốn đóng gói lại: tab Actions → Build Windows & Mac → Run workflow.
+
+---------------------------------------------------------------------
+BƯỚC 3 — Cài đặt
+---------------------------------------------------------------------
+WINDOWS: chạy file CaiDat. Nếu hiện "Windows protected your PC" → bấm "More info" (Thông tin thêm)
+         → "Run anyway" (Vẫn chạy). Biểu tượng "Trộn đề thi Online" có trên màn hình Desktop.
+MAC:     mở file .dmg → kéo biểu tượng vào thư mục Applications.
+         Lần đầu mở: nhấp chuột phải vào ứng dụng → Open (Mở) → Open.
+         Nếu báo "ứng dụng bị hỏng / không thể mở": mở Terminal, gõ lệnh sau rồi mở lại:
+             xattr -cr "/Applications/Tron De Thi Online.app"
+(Cảnh báo này xuất hiện vì phần mềm chưa mua chứng chỉ ký số của Microsoft/Apple — không phải virus.)
+
+---------------------------------------------------------------------
+CẬP NHẬT
+---------------------------------------------------------------------
+• Sửa trang web (thư mục web) như bình thường → ứng dụng tự dùng bản mới, KHÔNG cần đóng gói lại.
+• Chỉ đóng gói lại khi đổi địa chỉ trang web hoặc khi có bản ứng dụng mới.
