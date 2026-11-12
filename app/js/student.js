@@ -109,13 +109,13 @@
       if (PREVIEW) {
         const seed = 'preview|' + Date.now() + Math.random();
         const paper = QuizCore.buildPaper(previewExam, seed);
-        S = { attemptId: 'preview', paper, items: QuizCore.publicPaper(previewExam, paper), idx: 0, answers: [], violations: 0, log: [], hoTen, lop, mssv, startedAt: Date.now(), offset: 0 };
+        S = { attemptId: 'preview', paper, items: QuizCore.publicPaper(previewExam, paper), book: QuizCore.bookInfo(previewExam, paper), idx: 0, answers: [], violations: 0, log: [], hoTen, lop, mssv, startedAt: Date.now(), offset: 0 };
         S.qDeadline = null;
       } else {
         const r = await api(API, { action: 'start', examId: EXAM_ID, hoTen, lop, mssv, client: QA.isApp ? 'app' : 'web' });
         const local = LS.get('att.' + r.attemptId, null);
         clearInterval(winH);
-        S = { attemptNo: r.attemptNo, maxAttempts: r.maxAttempts, attemptId: r.attemptId, items: r.items, idx: r.idx || 0, answers: (r.saved && r.saved.length ? r.saved : (local && local.answers) || []), violations: Math.max(r.violations || 0, local ? local.violations || 0 : 0), log: (local && local.log) || [], hoTen, lop, mssv, startedAt: r.startedAt, offset: r.serverNow - Date.now() };
+        S = { attemptNo: r.attemptNo, maxAttempts: r.maxAttempts, attemptId: r.attemptId, items: r.items, book: r.book || null, idx: r.idx || 0, answers: (r.saved && r.saved.length ? r.saved : (local && local.answers) || []), violations: Math.max(r.violations || 0, local ? local.violations || 0 : 0), log: (local && local.log) || [], hoTen, lop, mssv, startedAt: r.startedAt, offset: r.serverNow - Date.now() };
         info = Object.assign(info, r.info, { offset: r.serverNow - Date.now() });
         if (r.resume && r.qStart) {
           const sec = S.items[S.idx] ? S.items[S.idx].sec : 0;
@@ -128,13 +128,14 @@
       const lf = PREVIEW ? null : LS.get('att.' + S.attemptId, null);
       S.flags = (lf && lf.flags) || [];
       S.plays = (lf && lf.plays) || {};
+      S.bk = (lf && lf.bk) || {};
       S.pending = [];
       if (info.hasSpeak) {
         $('#btnStart').textContent = 'Đang mở micro…';
         const ok = await getMic();
         if (!ok) toast('Chưa có quyền dùng micro — phần NÓI sẽ không ghi âm được. Hãy cho phép micro rồi tải lại trang.', 'bad');
       }
-      beginExam();
+      if (S.book && Object.keys(S.book).length) beginBooklet(); else beginExam();
     } catch (e) {
       $('#btnStart').disabled = false; $('#btnStart').textContent = 'Bắt đầu làm bài';
       msg(e.message); exitFull(); QA.Music.stop();
@@ -191,7 +192,7 @@
   window.addEventListener('beforeunload', (e) => { if (running) { saveLocal(); e.preventDefault(); e.returnValue = ''; } });
 
   /* -------------------------------- làm bài -------------------------------- */
-  function saveLocal() { if (S && !PREVIEW) LS.set('att.' + S.attemptId, { answers: S.answers, violations: S.violations, log: S.log.slice(-200), idx: S.idx, flags: S.flags, plays: S.plays }); }
+  function saveLocal() { if (S && !PREVIEW) LS.set('att.' + S.attemptId, { answers: S.answers, violations: S.violations, log: S.log.slice(-200), idx: S.idx, flags: S.flags, plays: S.plays, bk: S.bk }); }
   function sendProgress() { if (PREVIEW || !S) return; api(API, { action: 'progress', attemptId: S.attemptId, idx: S.idx, answers: S.answers, violations: S.violations }, 1).catch(() => {}); }
   function beginExam() {
     running = true;
@@ -432,6 +433,257 @@
       }, 250);
     };
   }
+  /* ======================= ĐỀ TOEIC NGUYÊN BỘ (sách đề + phiếu trả lời) ======================= */
+  const BA = { el: null, k: null, lastSave: 0 };
+  const IMGC = {};
+  function stopBookAudio() { if (BA.el) { try { BA.el.pause(); } catch (e) { /* bỏ qua */ } BA.el = null; BA.k = null; } }
+  function beginBooklet() {
+    running = true;
+    document.body.classList.add('exam', 'bookmode');
+    watermark();
+    const bi = Object.keys(S.book)[0], B = S.book[bi];
+    S.B = B;
+    S.secs = ['L', 'R'].filter(k => S.items.some(it => it.skill === k));
+    // các trang thuộc từng phần (bỏ trang của phần không có trong bài)
+    S.secPages = {};
+    S.secs.forEach(k => {
+      const its = S.items.filter(it => it.skill === k && it.page != null).map(it => it.page);
+      let list = B.pages.map((p, i) => i).filter(i => B.pages[i].sec === k || B.pages[i].sec === 'LR' || !B.pages[i].sec);
+      if (its.length && B.pages.some(p => p.sec === 'LR')) { const lo = Math.min.apply(null, its), hi = Math.max.apply(null, its); list = list.filter(i => B.pages[i].sec !== 'LR' || (i >= lo - 1 && i <= hi)); }
+      S.secPages[k] = list;
+    });
+    S.mapped = {}; S.secs.forEach(k => { S.mapped[k] = S.items.some(it => it.skill === k && it.page != null); });
+    if (!S.bk.sec || !S.secs.includes(S.bk.sec)) S.bk.sec = S.secs[0];
+    if (S.bk.page == null || !S.secPages[S.bk.sec].includes(S.bk.page)) S.bk.page = S.secPages[S.bk.sec][0];
+    S.bk.zoom = S.bk.zoom || 1;
+    const nL = S.items.filter(it => it.skill === 'L').map(it => it.num), nR = S.items.filter(it => it.skill === 'R').map(it => it.num);
+    const rng = (a) => a.length ? Math.min.apply(null, a) + '–' + Math.max.apply(null, a) : '';
+    app.innerHTML = '<div class="qbar"><div class="wrap"><div class="timer" id="timer"><svg width="52" height="52"><circle cx="26" cy="26" r="22" fill="none" stroke="var(--line)" stroke-width="5"/><circle id="ring" cx="26" cy="26" r="22" fill="none" stroke="var(--brand-2)" stroke-width="5" stroke-linecap="round" stroke-dasharray="138.2" stroke-dashoffset="0"/></svg><b id="tleft"></b></div>' +
+      '<div><div style="font-weight:700" id="qpos"></div><div class="muted" style="font-size:.84rem">' + esc(S.hoTen) + ' · ' + esc(S.lop) + '</div></div><span class="spacer"></span><span class="pill warn hide" id="endChip"></span><span class="pill" id="vbadge"></span>' +
+      (info.music && info.music.url && info.music.allowMute ? '<button class="btn sm" id="musicBtn" title="Tắt / bật nhạc nền"></button>' : '') + '<button class="btn sm primary" id="barSubmit">Nộp bài</button></div><div class="prog"><i id="progbar"></i></div></div>' +
+      '<div class="wrap bkwrap">' +
+      (S.secs.length > 1 ? '<div class="bktabs">' + S.secs.map(k => '<button class="bktab" data-sec="' + k + '">' + (k === 'L' ? '🎧 Listening · câu ' + rng(nL) : '📖 Reading · câu ' + rng(nR)) + '</button>').join('') + '</div>' : '') +
+      '<div class="card bkaud hide" id="bkAud"></div>' +
+      '<div class="bkmain"><div class="card bkview"><div class="bkbar"><button class="btn sm" id="pgPrev">◀</button><select id="pgSel"></select><button class="btn sm" id="pgNext">▶</button><span class="spacer"></span><button class="btn sm" id="zOut" title="Thu nhỏ">−</button><button class="btn sm" id="zIn" title="Phóng to">+</button></div><div class="bkimg" id="bkImg"></div></div>' +
+      '<div class="card bksheet"><div class="row" style="margin-bottom:6px"><b id="shTitle">Phiếu trả lời</b><span class="spacer"></span><button class="btn sm" id="shAll">Phiếu đầy đủ</button></div><div id="bkSheet"></div><div class="bknav"><button class="btn" id="pgPrev2">← Trang trước</button><button class="btn primary" id="pgNext2">Trang sau →</button></div></div></div>' +
+      '<div class="card hide" id="palCard"><div class="row" style="margin-bottom:8px"><b>Phiếu trả lời đầy đủ</b><span class="spacer"></span><span class="hint" style="margin:0"><span class="lg ans"></span> đã chọn <span class="lg"></span> chưa chọn</span></div><div class="pal bkpal" id="pal"></div></div>' +
+      '<div style="max-width:860px;margin:0 auto 30px">' + QA.AUTHOR_HTML + '</div></div>';
+    $('#barSubmit').onclick = confirmSubmit;
+    $$('.bktab').forEach(b => b.onclick = () => switchSec(b.dataset.sec));
+    $('#pgPrev').onclick = $('#pgPrev2').onclick = () => stepPage(-1);
+    $('#pgNext').onclick = $('#pgNext2').onclick = () => stepPage(1);
+    $('#pgSel').onchange = (e) => showPage(+e.target.value);
+    $('#zIn').onclick = () => { S.bk.zoom = Math.min(3, (S.bk.zoom || 1) + 0.5); applyZoom(); saveLocal(); };
+    $('#zOut').onclick = () => { S.bk.zoom = Math.max(1, (S.bk.zoom || 1) - 0.5); applyZoom(); saveLocal(); };
+    $('#shAll').onclick = () => { const c = $('#palCard'); c.classList.toggle('hide'); bkPalette(); if (!c.classList.contains('hide')) c.scrollIntoView({ behavior: 'smooth' }); };
+    const mb = $('#musicBtn');
+    if (mb) { const paintM = () => { mb.textContent = QA.Music.muted() ? '🔇 Nhạc' : '🔊 Nhạc'; }; mb.onclick = () => { QA.Music.setMuted(!QA.Music.muted()); LS.set('musicMuted', QA.Music.muted()); if (!QA.Music.playing()) QA.Music.start(info.music.url, info.music.vol); paintM(); }; paintM(); }
+    startTotalTimer();
+    const end = !PREVIEW && info.window && info.window.end;
+    if (end) {
+      const chip = $('#endChip'); chip.classList.remove('hide');
+      const t = () => { if (!running) { clearInterval(S.endH); return; } const l = (end - srvNow()) / 1000; chip.textContent = 'Kết thúc sau ' + fmtSec(Math.max(0, Math.ceil(l))); if (l <= 0) { clearInterval(S.endH); clearInterval(timerH); submit('Hết giờ làm bài'); } };
+      t(); S.endH = setInterval(t, 1000);
+    }
+    switchSec(S.bk.sec, true);
+    paintStatus();
+    window.scrollTo(0, 0);
+  }
+  function switchSec(k, keepPage) {
+    S.bk.sec = k;
+    $$('.bktab').forEach(b => b.classList.toggle('on', b.dataset.sec === k));
+    const pages = S.secPages[k];
+    $('#pgSel').innerHTML = pages.map((pi, j) => '<option value="' + pi + '">Trang ' + (j + 1) + ' / ' + pages.length + pageLabel(pi) + '</option>').join('');
+    paintAudio();
+    showPage(keepPage && pages.includes(S.bk.page) ? S.bk.page : (S.bk['p' + k] != null && pages.includes(S.bk['p' + k]) ? S.bk['p' + k] : pages[0]));
+  }
+  function pageLabel(pi) {
+    const ns = S.items.filter(it => it.page === pi && it.skill === S.bk.sec).map(it => it.num);
+    return ns.length ? ' · câu ' + Math.min.apply(null, ns) + (ns.length > 1 ? '–' + Math.max.apply(null, ns) : '') : '';
+  }
+  function stepPage(d) {
+    const pages = S.secPages[S.bk.sec], j = pages.indexOf(S.bk.page) + d;
+    if (j >= 0 && j < pages.length) { showPage(pages[j]); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    else if (d > 0 && S.secs.indexOf(S.bk.sec) < S.secs.length - 1) { switchSec(S.secs[S.secs.indexOf(S.bk.sec) + 1]); window.scrollTo({ top: 0 }); }
+    else if (d > 0) confirmSubmit();
+  }
+  function applyZoom() { const img = $('#bkImg img'); if (img) img.style.width = ((S.bk.zoom || 1) * 100) + '%'; }
+  async function imgSrc(pg) {
+    if (pg.id && IMGC[pg.id]) return IMGC[pg.id];
+    return pg.src;
+  }
+  function loadPageImg(img, pg) {
+    let step = 0;
+    img.onerror = async () => {
+      step++;
+      if (step === 1 && pg.id) { img.src = 'https://drive.google.com/thumbnail?id=' + pg.id + '&sz=w1600'; return; }
+      if (step === 2 && pg.id && !PREVIEW) {
+        try { const u = await audioViaServer({ id: pg.id }); IMGC[pg.id] = u; img.src = u; return; } catch (e) { /* báo lỗi bên dưới */ }
+      }
+      img.onerror = null; img.alt = 'Không tải được trang đề'; img.classList.add('err');
+      const box = img.parentNode; if (box && !box.querySelector('.imgerr')) { const d = document.createElement('div'); d.className = 'msg bad imgerr'; d.innerHTML = 'Không tải được trang đề (mạng yếu?). <button class="btn sm">Thử lại</button>'; d.querySelector('button').onclick = () => showPage(S.bk.page); box.appendChild(d); }
+    };
+    imgSrc(pg).then(u => { img.src = u; });
+  }
+  function showPage(pi) {
+    S.bk.page = pi; S.bk['p' + S.bk.sec] = pi;
+    const B = S.B, pg = B.pages[pi];
+    $('#pgSel').value = String(pi);
+    const box = $('#bkImg');
+    box.innerHTML = '<img alt="Trang đề" draggable="false">';
+    const img = box.querySelector('img');
+    loadPageImg(img, pg); applyZoom();
+    // tải trước trang sau
+    const pages = S.secPages[S.bk.sec], nx = pages[pages.indexOf(pi) + 1];
+    if (nx != null && B.pages[nx] && B.pages[nx].src && !IMGC[B.pages[nx].id]) { const pre = new Image(); pre.src = B.pages[nx].src; }
+    $('#pgPrev').disabled = $('#pgPrev2').disabled = pages.indexOf(pi) <= 0 && S.secs.indexOf(S.bk.sec) === 0;
+    renderSheet();
+    const first = S.items.findIndex(it => it.page === pi && it.skill === S.bk.sec);
+    if (first >= 0) S.idx = first;
+    saveLocal(); sendProgress();
+  }
+  function sheetRows(list) {
+    return list.map(i => { const it = S.items[i], a = S.answers[i] || []; return '<div class="arow' + (a.length ? ' done' : '') + '" data-ai="' + i + '"><b>' + it.num + '</b>' + it.options.map((_, d) => '<button class="ab' + (a.includes(d) ? ' sel' : '') + '" data-i="' + i + '" data-d="' + d + '">' + LET[d] + '</button>').join('') + '</div>'; }).join('');
+  }
+  function renderSheet(focusI) {
+    const sec = S.bk.sec, pi = S.bk.page;
+    let list = S.items.map((it, i) => i).filter(i => S.items[i].skill === sec && S.items[i].page === pi);
+    let html, title;
+    if (list.length) { title = 'Phiếu trả lời trang này'; html = sheetRows(list); }
+    else if (!S.mapped[sec]) {
+      title = 'Phiếu trả lời · ' + (sec === 'L' ? 'Listening' : 'Reading');
+      const all = S.items.map((it, i) => i).filter(i => S.items[i].skill === sec);
+      const parts = Array.from(new Set(all.map(i => S.items[i].part)));
+      html = parts.map(p => '<div class="shpart">Part ' + p + '</div>' + sheetRows(all.filter(i => S.items[i].part === p))).join('');
+    } else {
+      // trang chỉ có đoạn văn / hình: hiện luôn các câu hỏi in ở trang sau
+      const pages = S.secPages[sec], nx = pages.slice(pages.indexOf(pi) + 1).find(p2 => S.items.some(it => it.skill === sec && it.page === p2));
+      const nl = nx == null ? [] : S.items.map((it, i) => i).filter(i => S.items[i].skill === sec && S.items[i].page === nx);
+      title = nl.length ? 'Câu hỏi ở trang sau' : 'Phiếu trả lời';
+      html = nl.length ? '<div class="hint" style="margin:0 0 6px">Trang này là đoạn văn / hình — câu hỏi in ở trang sau, em có thể chọn đáp án ngay tại đây.</div>' + sheetRows(nl) : '<div class="msg info">Trang này không có câu hỏi — bấm <b>Trang sau →</b>.</div>';
+    }
+    $('#shTitle').textContent = title;
+    const sh = $('#bkSheet'); sh.innerHTML = html;
+    $$('.ab', sh).forEach(b => b.onclick = () => {
+      const i = +b.dataset.i, d = +b.dataset.d, a = S.answers[i] || [];
+      S.answers[i] = a.includes(d) ? [] : [d];
+      const row = b.closest('.arow');
+      $$('.ab', row).forEach(x => x.classList.toggle('sel', (S.answers[i] || []).includes(+x.dataset.d)));
+      row.classList.toggle('done', !!(S.answers[i] || []).length);
+      S.idx = i; saveLocal(); paintStatus();
+      if (!$('#palCard').classList.contains('hide')) bkPalette();
+      clearTimeout(S.progH); S.progH = setTimeout(sendProgress, 1500);
+    });
+    if (focusI != null) { const r = sh.querySelector('[data-ai="' + focusI + '"]'); if (r) { r.classList.add('focus'); r.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => r.classList.remove('focus'), 1800); } }
+  }
+  function paintStatus() {
+    const n = S.items.length, c = answeredCount();
+    $('#qpos').textContent = 'Đã chọn ' + c + '/' + n;
+    $('#progbar').style.width = (c / n * 100) + '%';
+    $('#vbadge').textContent = S.violations ? 'Vi phạm: ' + S.violations : 'Đang làm bài';
+    $('#vbadge').className = 'pill ' + (S.violations ? 'bad' : 'ok');
+  }
+  function bkPalette() {
+    const el = $('#pal'); if (!el) return;
+    el.innerHTML = S.secs.map(sec => '<div class="shpart" style="grid-column:1/-1">' + (sec === 'L' ? 'Listening' : 'Reading') + '</div>' + S.items.map((it, k) => it.skill !== sec ? '' : '<button class="pb' + (isAnswered(k) ? ' ans' : '') + '" data-k="' + k + '">' + it.num + ((S.answers[k] || []).length ? '<small>' + LET[S.answers[k][0]] + '</small>' : '') + '</button>').join('')).join('');
+    $$('.pb', el).forEach(b => b.onclick = () => {
+      const k = +b.dataset.k, it = S.items[k];
+      if (it.skill !== S.bk.sec) switchSec(it.skill);
+      if (it.page != null) showPage(it.page);
+      renderSheet(k);
+      $('.bkmain').scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+  /* ---- file nghe theo Part ---- */
+  function audSeq() {
+    const B = S.B, ks = Object.keys(B.parts || {});
+    if (ks.includes('all')) return ['all'];
+    const have = new Set(S.items.filter(it => it.skill === 'L').map(it => String(it.part)));
+    return ['1', '2', '3', '4'].filter(k => have.has(k) && B.parts[k]).concat(['1', '2', '3', '4'].filter(k => have.has(k) && !B.parts[k]).map(k => '!' + k));
+  }
+  function paintAudio() {
+    const box = $('#bkAud');
+    if (S.bk.sec !== 'L' || !S.secs.includes('L')) { box.classList.add('hide'); return; }
+    box.classList.remove('hide');
+    const P = +info.audioPlays || 0, seq = audSeq();
+    const used = (k) => S.plays['P' + k] || 0;
+    const ap = S.bk.apos;
+    const playing = BA.el && !BA.el.paused;
+    const anyPlayed = seq.some(k => used(k) > 0);
+    let main = '';
+    if (playing) main = '<button class="btn" id="aMain" ' + (P === 0 ? '' : 'disabled') + '>' + (P === 0 ? '⏸ Tạm dừng' : '♪ Đang phát…') + '</button>';
+    else if (ap && ap.k && seq.includes(ap.k) && ap.t > 2) main = '<button class="btn primary" id="aMain" data-resume="1">▶ Nghe tiếp ' + (ap.k === 'all' ? '' : 'Part ' + ap.k + ' ') + 'từ ' + fmtSec(ap.t) + '</button>';
+    else { const nk = seq.find(k => k[0] !== '!' && (P === 0 || used(k) < P) && !(P === 1 && used(k) > 0)); main = nk ? '<button class="btn primary" id="aMain" data-k="' + nk + '">▶ ' + (anyPlayed ? 'Nghe ' + (nk === 'all' ? 'lại' : 'Part ' + nk) : 'Bắt đầu phần nghe' + (seq.length > 1 ? ' (Part 1 → ' + seq[seq.length - 1].replace('!', '') + ')' : '')) + '</button>' : '<span class="pill ok">Đã nghe xong</span>'; }
+    box.innerHTML = '<div class="row"><b>🎧 Phần nghe</b><span class="hint" style="margin:0">' + (P === 1 ? 'Mỗi Part chỉ phát 1 lần, tự chuyển Part — như thi thật.' : P ? 'Mỗi Part nghe tối đa ' + P + ' lần.' : 'Luyện nghe: nghe lại không giới hạn.') + '</span><span class="spacer"></span>' + main + '</div>' +
+      '<div class="aparts">' + seq.map(k => {
+        if (k[0] === '!') return '<div class="apart miss">Part ' + k.slice(1) + ' <span class="pill bad">thiếu file nghe</span></div>';
+        const cur = BA.k === k, u = used(k), left = P ? Math.max(0, P - u) : Infinity;
+        const can = !cur && !(P === 1) && (left > 0) && !playing;
+        return '<div class="apart' + (cur ? ' cur' : '') + (u && !cur ? ' done' : '') + '"><span>' + (k === 'all' ? 'Toàn bộ' : 'Part ' + k) + '</span><div class="abar"><i id="abar_' + k + '"' + (u && !cur ? ' style="width:100%"' : '') + '></i></div><span class="hint" id="at_' + k + '">' + (cur ? '' : u ? '✓ đã nghe' + (P > 1 ? ' (' + u + '/' + P + ')' : '') : 'chưa nghe') + '</span>' + (can && u ? '<button class="btn sm" data-replay="' + k + '">↻</button>' : '') + '</div>';
+      }).join('') + '</div><div class="hint" id="aMsg"></div>';
+    const m = $('#aMain');
+    if (m) m.onclick = () => {
+      if (BA.el && !BA.el.paused) { if (P === 0) { BA.el.pause(); paintAudio(); } return; }
+      if (BA.el && BA.el.paused && P === 0 && BA.k) { BA.el.play(); paintAudio(); return; }
+      if (m.dataset.resume) playPart(ap.k, ap.t); else if (m.dataset.k) playPart(m.dataset.k, 0);
+    };
+    $$('[data-replay]', box).forEach(b => b.onclick = () => playPart(b.dataset.replay, 0));
+  }
+  async function playPart(k, from) {
+    const ref = S.B.parts[k];
+    const msgEl = () => $('#aMsg');
+    if (!ref || ref.missing) { if (msgEl()) msgEl().textContent = 'Thiếu file nghe ' + (k === 'all' ? '' : 'Part ' + k) + ' — báo giáo viên.'; return; }
+    stopBookAudio();
+    const P = +info.audioPlays || 0;
+    const resume = from > 0;
+    if (!resume) S.plays['P' + k] = (S.plays['P' + k] || 0) + 1;
+    S.bk.apos = { k, t: from || 0 };
+    saveLocal();
+    const el = new Audio(); BA.el = el; BA.k = k; el.preload = 'auto';
+    let triedServer = false, seeked = !resume;
+    const seek = () => { if (!seeked && el.duration && from < el.duration - 1) { el.currentTime = from; seeked = true; } };
+    el.onloadedmetadata = seek;
+    el.ontimeupdate = () => {
+      if (BA.el !== el) return;
+      seek();
+      const bar = document.getElementById('abar_' + k), t = document.getElementById('at_' + k);
+      if (el.duration && bar) bar.style.width = (el.currentTime / el.duration * 100) + '%';
+      if (t) t.textContent = fmtSec(el.currentTime) + ' / ' + (el.duration ? fmtSec(el.duration) : '…');
+      S.bk.apos = { k, t: el.currentTime };
+      if (Date.now() - BA.lastSave > 3000) { BA.lastSave = Date.now(); saveLocal(); }
+    };
+    el.onended = () => {
+      if (BA.el !== el) return;
+      BA.el = null; BA.k = null; S.bk.apos = null; saveLocal();
+      const seq = audSeq(), nk = seq[seq.indexOf(k) + 1];
+      if (nk && nk[0] !== '!' && !(S.plays['P' + nk] > 0) && running) playPart(nk, 0); else paintAudio();
+    };
+    el.onerror = async () => {
+      if (BA.el !== el) return;
+      if (!triedServer && ref.id && !PREVIEW) {
+        triedServer = true; if (msgEl()) msgEl().textContent = 'Đang tải file nghe ' + (k === 'all' ? '' : 'Part ' + k) + '… (lần đầu có thể mất vài chục giây)';
+        try { el.src = await audioViaServer(ref); seeked = !resume; await el.play(); if (msgEl()) msgEl().textContent = ''; paintAudio(); return; } catch (e) { /* báo lỗi */ }
+      }
+      if (!resume) S.plays['P' + k] = Math.max(0, (S.plays['P' + k] || 1) - 1);
+      BA.el = null; BA.k = null; saveLocal(); paintAudio();
+      if (msgEl()) msgEl().textContent = 'Không phát được file nghe — kiểm tra mạng rồi bấm ▶ lại.';
+    };
+    el.src = AUD.cache[ref.id] || ref.src;
+    // chuyển tới trang đầu của Part đang nghe
+    // học sinh đang ở trang của Part trước => tự lật tới trang đầu của Part đang nghe (đang xem trước câu hỏi thì giữ nguyên)
+    if (S.bk.sec === 'L' && k !== 'all') {
+      const it = S.items.find(x => x.skill === 'L' && String(x.part) === k && x.page != null);
+      const onPg = S.items.filter(x => x.skill === 'L' && x.page === S.bk.page).map(x => +x.part);
+      if (it && it.page !== S.bk.page && (!onPg.length || Math.max.apply(null, onPg) < +k)) showPage(it.page);
+    }
+    paintAudio();
+    try { await el.play(); paintAudio(); }
+    catch (e) {
+      if (e && e.name === 'NotAllowedError') { if (!resume) S.plays['P' + k] = Math.max(0, (S.plays['P' + k] || 1) - 1); S.bk.apos = resume ? { k, t: from } : null; BA.el = null; BA.k = null; saveLocal(); paintAudio(); if (msgEl()) msgEl().textContent = 'Bấm ▶ để nghe.'; }
+    }
+    void P;
+  }
+
   function FREE() { return info && info.navMode === 'free'; }
   const isAnswered = (k) => { const a = S.answers[k], t = S.items[k].type; return t === 'speak' ? !!(a && a.rec) : t === 'mc' ? !!(a && a.length) : t === 'fill' ? !!(Array.isArray(a) && a.some(x => String(x || '').trim())) : !!(a && String(a).trim()); };
   function answeredCount() { let c = 0; for (let k = 0; k < S.items.length; k++) if (isAnswered(k)) c++; return c; }
@@ -453,6 +705,7 @@
       if (!running || !$('#tleft')) { clearInterval(h); return; }
       const l = (deadline - srvNow()) / 1000;
       $('#tleft').textContent = fmtSec(Math.ceil(Math.max(0, l)));
+      $('#tleft').classList.toggle('long', $('#tleft').textContent.length > 5);
       $('#ring').style.strokeDashoffset = String(138.2 * (1 - Math.max(0, Math.min(1, l / span))));
       const low = l <= Math.min(120, span * 0.1);
       $('#timer').classList.toggle('low', low); $('#ring').style.stroke = low ? 'var(--bad)' : 'var(--brand-2)';
@@ -462,9 +715,9 @@
   }
   function confirmSubmit() {
     const un = [], fl = [];
-    S.items.forEach((_, k) => { if (!isAnswered(k)) un.push(k + 1); if (S.flags && S.flags[k]) fl.push(k + 1); });
+    S.items.forEach((it, k) => { if (!isAnswered(k)) un.push(it.num || k + 1); if (S.flags && S.flags[k]) fl.push(it.num || k + 1); });
     const unanswered = un.length;
-    $('#modalBody').innerHTML = '<h2>Nộp bài?</h2><p>' + (unanswered ? 'Em còn <b>' + unanswered + '</b> câu chưa trả lời' + (FREE() ? ' (câu ' + un.slice(0, 30).join(', ') + (un.length > 30 ? '…' : '') + ')' : '') + '. ' : 'Em đã trả lời tất cả các câu. ') + (FREE() && fl.length ? 'Câu đánh dấu xem lại: <b>' + fl.join(', ') + '</b>. ' : '') + 'Sau khi nộp sẽ không sửa được nữa.</p><div class="row" style="justify-content:flex-end"><button class="btn" id="mNo">Chưa nộp</button><button class="btn primary" id="mYes">Nộp bài</button></div>';
+    $('#modalBody').innerHTML = '<h2>Nộp bài?</h2><p>' + (unanswered ? 'Em còn <b>' + unanswered + '</b> câu chưa trả lời' + (FREE() || S.book ? ' (câu ' + un.slice(0, 30).join(', ') + (un.length > 30 ? '…' : '') + ')' : '') + '. ' : 'Em đã trả lời tất cả các câu. ') + (FREE() && fl.length ? 'Câu đánh dấu xem lại: <b>' + fl.join(', ') + '</b>. ' : '') + 'Sau khi nộp sẽ không sửa được nữa.</p><div class="row" style="justify-content:flex-end"><button class="btn" id="mNo">Chưa nộp</button><button class="btn primary" id="mYes">Nộp bài</button></div>';
     $('#modal').classList.add('on');
     $('#mNo').onclick = () => $('#modal').classList.remove('on');
     $('#mYes').onclick = () => { $('#modal').classList.remove('on'); submit(''); };
@@ -475,7 +728,7 @@
   async function submit(reason) {
     if (submitting) return; submitting = true;
     clearInterval(timerH); running = false;
-    stopAudio(); stopRec();
+    stopAudio(); stopRec(); stopBookAudio();
     $('#qcard') && ($('#qcard').innerHTML = '<h2>Đang nộp bài…</h2><p class="muted">Vui lòng không đóng trang.</p>');
     if (S.pending && S.pending.length) { await new Promise(r => setTimeout(r, 400)); await Promise.allSettled(S.pending); }
     saveLocal();
@@ -505,7 +758,8 @@
     return { score: g.score, right: g.mcRight, mcCount: g.mcCount, essayPending: g.essayPending, scale: info.scale, review: g, skills: g.skills, toeic: g.toeic };
   }
   function done(r, reason) {
-    exitFull(); QA.Music.stop(); stopAudio();
+    exitFull(); QA.Music.stop(); stopAudio(); stopBookAudio();
+    document.body.classList.remove('bookmode');
     if (S && S.stream) { try { S.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* bỏ qua */ } }
     document.body.classList.remove('exam');
     $('#shield').classList.remove('on'); $('#wm').style.backgroundImage = 'none';
@@ -527,6 +781,13 @@
       if (canAgain) h += '<button class="btn accent" id="again" style="margin-top:6px">Làm lại lần ' + (r.attemptNo + 1) + ' (đề trộn mới)</button>';
     }
     h += '</div>';
+    if (r.review && S.book) {
+      const rv = PREVIEW ? r.review.details.map(d => { const q = previewExam.banks[d.b].questions[d.q]; return { num: q.num, chosen: d.chosen, correct: d.correct, ok: d.ok, n: q.options.length }; })
+        : r.review.map((d, i) => ({ num: d.num || (S.items[i] && S.items[i].num) || i + 1, chosen: d.chosen || [], correct: d.correct || [], ok: d.ok, n: (d.options || []).length || 4 }));
+      h += '<div class="card review" style="text-align:left"><h2>' + (PREVIEW ? 'Đáp án (chỉ hiện ở chế độ xem thử)' : 'Xem lại bài làm &amp; đáp án') + '</h2><p class="hint">Xanh = đáp án đúng; đỏ = em chọn sai.</p><div class="revgrid">' +
+        rv.map(d => '<div class="rv ' + (d.ok ? 'ok' : d.chosen.length ? 'bad' : 'skip') + '"><b>' + d.num + '</b>' + Array.from({ length: d.n }, (_, oi) => '<span class="' + (d.correct.includes(oi) ? 'c' : d.chosen.includes(oi) ? 'x' : '') + '">' + LET[oi] + '</span>').join('') + '</div>').join('') + '</div></div>';
+      r = Object.assign({}, r, { review: null });
+    }
     if (!PREVIEW && r.review) {
       h += '<div class="card review" style="text-align:left"><h2>Xem lại bài làm &amp; đáp án</h2>' + r.review.map((d, i) => '<div class="qprev"><b>Câu ' + (i + 1) + '</b> ' +
         (d.type === 'fill' ? '<span class="pill ' + (d.ok ? 'ok' : 'bad') + '">' + (d.ok ? 'Đúng' : 'Chưa đúng hết') + '</span><div>' + fillHtml(d.stem, d.given, d.oks, d.blanks) + '</div>' :
@@ -534,7 +795,7 @@
           d.options.map((o, oi) => '<div class="opt' + (d.correct.includes(oi) ? ' ok' : d.chosen.includes(oi) ? ' badc' : '') + '">' + LET[oi] + ') ' + o + (d.correct.includes(oi) ? ' ✓' : '') + (d.chosen.includes(oi) ? ' ← em chọn' : '') + '</div>').join('')
           : '<span class="pill">Tự luận</span><div>' + d.stem + '</div><div class="msg info" style="white-space:pre-wrap">' + (esc(d.text) || '<i>(bỏ trống)</i>') + '</div>' + (d.answer ? '<div class="hint"><b>Đáp án gợi ý:</b> ' + d.answer + '</div>' : '')) + '</div>').join('') + '</div>';
     }
-    if (PREVIEW && r.review) {
+    if (PREVIEW && r.review && !S.book) {
       h += '<div class="card review" style="text-align:left"><h2>Đáp án (chỉ hiện ở chế độ xem thử)</h2>' + r.review.details.map((d, i) => {
         const q = previewExam.banks[d.b].questions[d.q];
         if (d.type === 'fill') return '<div class="qprev"><b>Câu ' + (i + 1) + '</b> <span class="pill ' + (d.ok ? 'ok' : 'bad') + '">' + (d.ok ? 'Đúng' : 'Chưa đúng hết') + '</span><div>' + fillHtml(q.stem, d.given, d.oks, q.blanks) + '</div></div>';

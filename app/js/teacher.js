@@ -46,6 +46,7 @@
     const add = (ref, where) => { if (!ref || /^https?:/i.test(ref)) return; if (!m.has(ref)) m.set(ref, []); m.get(ref).push(where); };
     (b.groups || []).forEach((g, gi) => add(g && g.audio, (g && g.title) || ('Đoạn ' + (gi + 1))));
     b.questions.forEach((q, i) => add(q.audio, 'Câu ' + (i + 1)));
+    if (b.book && window.QuizBook) QuizBook.audioNeeds(b, add);
     return m;
   }
   const hasAud = (b, name) => !!(b.audio && b.audio[name] && (b.audio[name].id || b.audio[name].link));
@@ -64,8 +65,9 @@
     let total = 0;
     el.innerHTML = banks.map((b, i) => {
       const s = bankStats(b); total += s.usable;
+      const bookPill = b.book ? '<span class="pill accent">Đề nguyên bộ · ' + b.book.pages.length + ' trang</span>' : '';
       return '<div class="bank"><div class="nm"><input type="text" data-rename="' + i + '" value="' + esc(b.name) + '"><div class="hint">' + esc(b.file || '') + ' · ' + fmtTime(b.addedAt) + '</div></div>' +
-        (EN ? ['L', 'R', 'W', 'S'].filter(k => s.sk[k]).map(k => '<span class="pill">' + SKN[k] + ' ' + s.sk[k] + '</span>').join('') + (s.sk.none ? '<span class="pill">Chưa rõ kỹ năng ' + s.sk.none + '</span>' : '') +
+        bookPill + (EN ? ['L', 'R', 'W', 'S'].filter(k => s.sk[k]).map(k => '<span class="pill">' + SKN[k] + ' ' + s.sk[k] + '</span>').join('') + (s.sk.none ? '<span class="pill">Chưa rõ kỹ năng ' + s.sk.none + '</span>' : '') +
           (s.audNeed ? '<span class="pill ' + (s.audHave < s.audNeed ? 'bad' : 'ok') + '">File nghe ' + s.audHave + '/' + s.audNeed + '</span>' : '')
         : '<span class="pill">' + s.mc + ' trắc nghiệm</span>' + (s.fi ? '<span class="pill">' + s.fi + ' điền khuyết</span>' : '') + (s.es ? '<span class="pill">' + s.es + ' tự luận</span>' : '')) +
         (s.warn ? '<span class="pill warn">' + s.warn + ' câu cần kiểm tra</span>' : '<span class="pill ok">Hợp lệ</span>') +
@@ -108,6 +110,7 @@
 
   function viewBank(bi) {
     const b = banks[bi];
+    if (b.book && window.QuizBook) return QuizBook.view(b, bookCtx);
     const render = () => {
       modal('<div class="row"><h2 style="margin:0">' + esc(b.name) + '</h2><span class="spacer"></span><button class="btn sm" id="mClose">Đóng</button></div>' +
         '<p class="hint">Bấm vào một phương án để đặt/bỏ đáp án đúng. Ô “giây” và “điểm” để trống = dùng theo nhóm. Bỏ chọn “Dùng” để loại câu khỏi đề.</p>' +
@@ -347,7 +350,9 @@
     });
     const ebanks = used.map(id => {
       const b = banks.find(x => x.id === id);
-      return { name: b.name, groups: b.groups || [], audio: b.audio || {}, questions: b.questions.map(q => ({ type: q.type, stem: q.stem, options: q.options, correct: q.correct, pin: q.pin, answer: q.answer, blanks: q.blanks, sec: q.sec, pts: q.pts, skill: q.skill, g: q.g, audio: q.audio, rec: q.rec, disabled: !!q.disabled || !QuizCore.usable(q) })) };
+      const eb = { name: b.name, groups: b.groups || [], audio: b.audio || {}, questions: b.questions.map(q => ({ type: q.type, stem: q.stem, options: q.options, correct: q.correct, pin: q.pin, answer: q.answer, blanks: q.blanks, sec: q.sec, pts: q.pts, skill: q.skill, g: q.g, audio: q.audio, rec: q.rec, num: q.num, part: q.part, page: q.page, disabled: !!q.disabled || !QuizCore.usable(q) })) };
+      if (b.book) eb.book = { parts: b.book.parts || {}, partsTxt: b.book.partsTxt, pages: b.book.pages.map(p => ({ id: p.id, sec: p.sec, n: p.n, w: p.w, h: p.h, first: p.first })) };
+      return eb;
     });
     const info = Object.assign({}, draft.info, { loai: loaiText(draft.info) });
     delete info.loaiKhac;
@@ -441,6 +446,7 @@
         if (!b) {
           b = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: eb.name, file: '(tải từ đề ' + id + ')', addedAt: Date.now(),
             questions: eb.questions.map((q, i) => Object.assign({ n: i + 1, text: '' }, q, { disabled: false })), groups: eb.groups || [], audio: eb.audio || {} };
+          if (eb.book) b.book = eb.book;
           banks.push(b);
         }
         return b.id;
@@ -545,6 +551,10 @@
       if (it.grp && it.grp !== lastGrp) { const gr = (bk.groups || [])[q.g] || {}; gHead = '<div class="gprev"><b>' + esc(gr.title || 'Đoạn dùng chung') + '</b>' + (gr.audio ? ' <span class="pill">🎧 ' + esc(gr.audio) + '</span>' : '') + (gr.stem ? '<div class="gstem">' + gr.stem + '</div>' : '') + '</div>'; }
       lastGrp = it.grp || null;
       let body;
+      if (bk.book && q.type === 'mc') {
+        const chosen = d[2] || [];
+        return '<div class="krow2"><b>' + q.num + '</b><span class="hint">P' + q.part + '</span>' + q.options.map((_, oi) => '<span class="kb' + (q.correct.includes(oi) ? ' on' : '') + (chosen.includes(oi) && !q.correct.includes(oi) ? ' badc' : '') + '">' + L[oi] + '</span>').join('') + (chosen.length ? (d[3] ? ' <span class="pill ok">Đúng</span>' : ' <span class="pill bad">Sai</span>') : ' <span class="pill warn">Bỏ trống</span>') + '</div>';
+      }
       if (q.type === 'mc') {
         const chosen = d[2] || [];
         body = q.options.map((o, oi) => '<div class="opt' + (q.correct.includes(oi) ? ' ok' : '') + '">' + L[oi] + ') ' + o + (q.correct.includes(oi) ? ' ✓' : '') + (chosen.includes(oi) ? ' <span class="pill ' + (q.correct.includes(oi) ? 'ok' : 'bad') + '">HS chọn</span>' : '') + '</div>').join('') + (chosen.length ? '' : '<div class="pill warn">Không trả lời</div>');
@@ -622,7 +632,7 @@
         const q = curExam.banks[it.b].questions[it.q], d = det.d[i] || [];
         if (q.type === 'speak') rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('Nói'), C(strip(q.stem).slice(0, 300)), C(d[2] && d[2].rec ? 'https://drive.google.com/file/d/' + d[2].rec + '/view' : '(không ghi âm)'), C(strip(q.answer).slice(0, 300)), C('')]);
         else if (q.type === 'fill') rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('ĐK'), C(strip(q.stem).slice(0, 300)), C((d[2] || []).map((x, k) => '(' + (k + 1) + ') ' + (x || '—')).join('; ')), C(q.blanks.map((a, k) => '(' + (k + 1) + ') ' + a.join(a.some(x => x.indexOf('/') >= 0) ? ' | ' : '/')).join('; ')), C((d[3] || []).filter(Boolean).length + '/' + q.blanks.length + ' đúng')]);
-        else if (q.type === 'mc') rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('TN'), C(strip(q.stem).slice(0, 300)), C((d[2] || []).map(x => L[x]).join(', ') || '(bỏ trống)'), C(q.correct.map(x => L[x]).join(', ')), C(d[3] ? 'Đúng' : 'Sai')]);
+        else if (q.type === 'mc') rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(q.num || i + 1), C(q.part ? 'Part ' + q.part : 'TN'), C(strip(q.stem).slice(0, 300)), C((d[2] || []).map(x => L[x]).join(', ') || '(bỏ trống)'), C(q.correct.map(x => L[x]).join(', ')), C(d[3] ? 'Đúng' : 'Sai')]);
         else rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('TL'), C(strip(q.stem).slice(0, 300)), C(String(d[2] || '').slice(0, 3000)), C(strip(q.answer).slice(0, 500)), C('')]);
       });
     });
@@ -649,6 +659,24 @@
     } catch (err) { toast(err.message, 'bad'); }
     e.target.value = '';
   };
+
+  /* ------------------------- đề TOEIC nguyên bộ (PDF) ------------------------- */
+  const bookCtx = {
+    modal, closeModal, needConn, saveBanks, audioPanel, bindAudioPanel,
+    api: (body) => api(conf().api, Object.assign({ key: conf().key }, body), 1),
+    created: async (bank) => {
+      banks.push(bank); await saveBanks();
+      const ks = ['L', 'R'].filter(k => bank.questions.some(q => q.skill === k));
+      const fresh = !draft.groups.length || confirm('Dùng đề "' + bank.name + '" cho bài thi đang soạn ở bước 2? (thay các nhóm câu hiện có, đặt sẵn cài đặt thi TOEIC: tự do, ' + (ks.length > 1 ? '120' : ks[0] === 'L' ? '45' : '75') + ' phút, nghe 1 lần)');
+      if (fresh) {
+        draft.groups = ks.map(k => ({ bankId: bank.id, skill: k, pick: 'random', count: '', range: '', list: '', sec: '', pts: '', shuffleOpts: false }));
+        draft.settings = Object.assign({}, draft.settings, { navMode: 'free', freeTime: 'total', totalMin: ks.length > 1 ? 120 : ks[0] === 'L' ? 45 : 75, order: 'keep', audioPlays: 1, toeic: true, maxViolations: draft.settings.maxViolations != null ? draft.settings.maxViolations : 3 });
+        draft.info = Object.assign({}, draft.info, { loai: 'Thi thử TOEIC', noiDung: bank.name });
+        LS.set(K.draft, draft); fillForm();
+      }
+    }
+  };
+  if ($('#bookOpen')) $('#bookOpen').onclick = () => { if (!window.QuizBook) return toast('Thiếu js/booklet.js', 'bad'); QuizBook.openImport(bookCtx); };
 
   /* ------------------------------- khởi động ------------------------------- */
   fillForm();

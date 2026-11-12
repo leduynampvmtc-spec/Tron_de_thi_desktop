@@ -129,3 +129,78 @@ input.blankin, .blankin { display: inline-block !important; width: 150px !import
 .skillsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 12px 0; }
 .skillsum div { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
 .skillsum b { display: block; font-size: 1.3rem; }
+
+/* ---------- Đề TOEIC nguyên bộ (sách đề PDF + phiếu trả lời) ---------- */
+.pill.accent { background: var(--accent); color: #2a1d00; border-color: var(--accent); }
+.bookcard { border: 1.5px dashed var(--brand-2); }
+.bkkey { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.bkkey textarea { flex: 1 1 280px; min-height: 150px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .92rem; }
+.keyimgs { flex: 1 1 280px; display: flex; flex-wrap: wrap; gap: 8px; max-height: 420px; overflow: auto; }
+.keyimgs img { max-width: 100%; width: 260px; border: 1px solid var(--line); border-radius: 8px; }
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 8px; }
+.pcell { text-align: center; }
+.pcell img, .pthumb { width: 100%; aspect-ratio: 612/792; object-fit: cover; border: 1px solid var(--line); border-radius: 6px; cursor: zoom-in; background: #fff; }
+.pthumb { display: grid; place-items: center; color: var(--muted); cursor: default; }
+.pcell .hint { margin: 2px 0; font-size: .74rem; }
+.pcell input { width: 100%; padding: 5px 6px; text-align: center; }
+.keypart { margin: 8px 0 12px; }
+.keygrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 4px 12px; margin-top: 4px; }
+.krow, .krow2 { display: flex; align-items: center; gap: 4px; }
+.krow.bad .kn { color: var(--bad); }
+.kn { width: 34px; font-weight: 700; text-align: right; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.kb { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; display: inline-grid; place-items: center; }
+.kb.on { background: var(--ok, #138a52); border-color: var(--ok, #138a52); color: #fff; }
+.kb.badc { background: var(--bad); border-color: var(--bad); color: #fff; }
+.kp { font-size: .72rem; color: var(--muted); margin-left: 4px; }
+.krow2 { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.krow2 > b { width: 36px; text-align: right; margin-right: 4px; }
+.krow2 .hint { width: 26px; margin: 0; }
+
+body.bookmode .wrap.bkwrap { max-width: 1280px; }
+.bktabs { display: flex; gap: 8px; margin: 12px 0 0; }
+.bktab { flex: 1; padding: 11px 10px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
+.bktab.on { border-color: var(--brand-2); background: var(--brand-2); color: #fff; }
+.bkaud { margin-top: 12px; }
+.bkaud .row { flex-wrap: wrap; gap: 8px 12px; }
+.aparts { display: grid; gap: 6px; margin-top: 10px; }
+.apart { display: grid; grid-template-columns: 70px 1fr auto auto; align-items: center; gap: 10px; font-size: .9rem; }
+.apart.cur span:first-child { font-weight: 800; color: var(--brand-2); }
+.apart.done { color: var(--muted); }
+.apart.miss { display: block; }
+.apart .abar { height: 6px; border-radius: 9px; background: var(--line); overflow: hidden; }
+.apart .abar i { display: block; height: 100%; width: 0; background: var(--brand-2); transition: width .3s linear; }
+.apart .hint { margin: 0; min-width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
+.bkmain { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; margin-top: 12px; }
+.bkmain > .card { margin: 0; min-width: 0; }
+.bkview { padding: 10px; }
+.bkbar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.bkbar select { width: auto; flex: 1 1 auto; min-width: 0; max-width: 300px; padding: 6px 8px; }
+.bkbar .btn { flex: none; }
+.bkimg { overflow: auto; max-height: calc(100vh - 150px); border: 1px solid var(--line); border-radius: 8px; background: #fff; -webkit-overflow-scrolling: touch; }
+.bkimg img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.bkimg img.err { min-height: 160px; }
+.bksheet { position: sticky; top: 92px; max-height: calc(100vh - 110px); overflow: auto; }
+.arow { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--line); border-radius: 8px; }
+.arow > b { width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+.arow.done > b { color: var(--brand-2); }
+.arow.focus { background: var(--warn-bg, #fff4dc); }
+.ab { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--line); background: var(--card); color: var(--ink); font: inherit; font-weight: 800; cursor: pointer; }
+.ab.sel { background: var(--brand-2); border-color: var(--brand-2); color: #fff; }
+.shpart { font-weight: 800; color: var(--brand); margin: 10px 0 2px; font-size: .9rem; }
+.bknav { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.bkpal { grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); }
+.bkpal .pb { height: 44px; line-height: 1.05; }
+.bkpal .pb small { display: block; font-size: .7rem; opacity: .85; }
+.revgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 10px; }
+.rv { display: flex; align-items: center; gap: 4px; padding: 3px 4px; border-radius: 6px; }
+.rv b { width: 34px; text-align: right; margin-right: 4px; }
+.rv span { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line); display: inline-grid; place-items: center; font-size: .72rem; font-weight: 700; }
+.rv span.c { background: var(--ok, #138a52); border-color: var(--ok, #138a52); color: #fff; }
+.rv span.x { background: var(--bad); border-color: var(--bad); color: #fff; }
+.rv.skip b { color: var(--muted); }
+@media (max-width: 860px) {
+  .bkmain { grid-template-columns: minmax(0, 1fr); }
+  .bksheet { position: static; max-height: none; }
+  .bkimg { max-height: none; }
+  .bkview { padding: 6px; }
+}

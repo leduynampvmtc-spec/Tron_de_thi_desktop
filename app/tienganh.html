@@ -57,6 +57,11 @@
       <input type="file" id="fileIn" accept=".docx" multiple class="hide">
       <div id="parseMsg"></div>
     </div>
+    <div class="card bookcard">
+      <div class="row"><div style="flex:1;min-width:240px"><h2 style="margin:0 0 4px">Đề TOEIC nguyên bộ — file PDF đề + đáp án + file nghe</h2>
+      <p class="muted" style="margin:0">Dùng ngay bộ đề ETS / TOEIC có sẵn (đề LC, RC dạng PDF, đáp án, file nghe Part 1–4), <b>không cần gõ lại đề</b>. Học sinh xem đúng trang đề gốc, chọn đáp án trên phiếu trả lời ngay dưới trang, file nghe tự phát lần lượt từng Part.</p></div>
+      <button class="btn primary" id="bookOpen" type="button">+ Nạp đề nguyên bộ (.zip / .pdf)</button></div>
+    </div>
     <div class="card">
       <div class="row"><h2 style="margin:0">Ngân hàng đã nạp</h2><span class="spacer"></span><span class="muted" id="bankTotal"></span></div>
       <p class="hint">Ngân hàng được lưu ngay trên máy tính này (trình duyệt), lần sau mở lại vẫn còn.</p>
@@ -239,13 +244,14 @@
 
 <div class="modal-bg" id="modal"><div class="modal" id="modalBody"></div></div>
 
-<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.6</span></div></footer>
+<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.7</span></div></footer>
 
 <script src="js/config.js"></script>
 <script src="js/common.js"></script>
 <script src="js/core.js"></script>
 <script src="js/docx.js"></script>
 <script>window.QUIZ_MODE = 'en';</script>
+<script src="js/booklet.js"></script>
 <script src="js/teacher.js"></script>
 </body>
 </html>

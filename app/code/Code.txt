@@ -225,7 +225,7 @@ function start_(req) {
     return {
       attemptId: attemptId, startedAt: startedAt.getTime(), serverNow: now.getTime(),
       resume: !!resume, idx: idx, qStart: qStart, saved: saved, violations: viol, attemptNo: attemptNo, maxAttempts: maxA,
-      info: QC_publicInfo(exam), items: QC_publicPaper(exam, paper)
+      info: QC_publicInfo(exam), items: QC_publicPaper(exam, paper), book: QC_bookInfo(exam, paper)
     };
   });
 }
@@ -333,7 +333,7 @@ function chunk_(file, part) {
 function uploadAudio_(req) {
   if (!req.b64) throw new Error('Thiếu dữ liệu file');
   var blob = Utilities.newBlob(Utilities.base64Decode(req.b64), req.mime || 'audio/mpeg', String(req.name || 'audio.mp3').slice(0, 120));
-  var f = folder_('TronDeThi_FileNghe').createFile(blob);
+  var f = folder_(req.kind === 'page' ? 'TronDeThi_SachDe' : 'TronDeThi_FileNghe').createFile(blob);
   var shared = true;
   try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { shared = false; }
   return { id: f.getId(), name: f.getName(), size: f.getSize(), shared: shared };
@@ -372,7 +372,7 @@ function caiDat() {
  * core.js — Lõi trộn đề / chấm điểm (dùng chung cho trình duyệt và
  * máy chủ Google Apps Script). Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí
  * ===================================================================== */
-var QC_VERSION = '1.6';
+var QC_VERSION = '1.7';
 
 function QC_hash(str) {
   var h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0;
@@ -454,10 +454,13 @@ function QC_buildPaper(exam, seedStr) {
   var st = exam.settings || {};
   var rnd = QC_rng(st.sameForAll ? ('same|' + exam.id) : seedStr);
   var used = {};
-  var blocks = [];
+  var blocks = [], anyBook = false;
   (exam.groups || []).forEach(function (g, gi) {
     var bank = exam.banks[g.bank];
     if (!bank) return;
+    // Đề TOEIC nguyên bộ (sách đề PDF + phiếu trả lời): giữ nguyên số câu, thứ tự và vị trí A/B/C/D
+    var isBook = !!bank.book;
+    if (isBook) anyBook = true;
     var qs = bank.questions || [];
     used[g.bank] = used[g.bank] || {};
     var okSkill = function (i) { return !g.skill || g.skill === 'all' || qs[i].skill === g.skill; };
@@ -475,6 +478,9 @@ function QC_buildPaper(exam, seedStr) {
     var units;
     if (g.pick === 'fixed') {
       units = toUnits(QC_parseList(g.list, qs.length).filter(function (i) { return QC_usable(qs[i]) && !used[g.bank][i] && okSkill(i); }));
+    } else if (isBook) {
+      var bpool = (g.range && String(g.range).trim()) ? QC_parseList(g.range, qs.length) : qs.map(function (_, i) { return i; });
+      units = bpool.filter(function (i) { return QC_usable(qs[i]) && !used[g.bank][i] && okSkill(i); }).sort(function (a, b) { return a - b; }).map(function (i) { return [i]; });
     } else {
       var pool = (g.range && String(g.range).trim()) ? QC_parseList(g.range, qs.length) : qs.map(function (_, i) { return i; });
       pool = pool.filter(function (i) { return QC_usable(qs[i]) && !used[g.bank][i] && okSkill(i); });
@@ -494,7 +500,7 @@ function QC_buildPaper(exam, seedStr) {
         if (q.type === 'mc') {
           perm = q.options.map(function (_, i) { return i; });
           // câu NGHE không trộn phương án (băng đọc A, B, C, D theo thứ tự)
-          var doShuffle = st.shuffleOpts !== false && g.shuffleOpts !== false && q.skill !== 'L';
+          var doShuffle = !isBook && st.shuffleOpts !== false && g.shuffleOpts !== false && q.skill !== 'L';
           if (doShuffle) {
             var pin = q.pin || [];
             var free = perm.filter(function (i) { return !pin[i]; });
@@ -510,11 +516,11 @@ function QC_buildPaper(exam, seedStr) {
         return it;
       });
     });
-    if (st.order === 'group') QC_shuffle(unitItems, rnd);
+    if (st.order === 'group' && !isBook) QC_shuffle(unitItems, rnd);
     blocks.push(unitItems);
   });
   var allUnits = [].concat.apply([], blocks);
-  if (st.order === 'mix' || !st.order) QC_shuffle(allUnits, rnd);
+  if ((st.order === 'mix' || !st.order) && !anyBook) QC_shuffle(allUnits, rnd);
   return { items: [].concat.apply([], allUnits) };
 }
 
@@ -539,8 +545,31 @@ function QC_audioIds(exam) {
     var chk = function (ref) { var r = QC_audioRef(b, ref); if (r && r.id) ids[r.id] = 1; };
     (b.questions || []).forEach(function (q) { chk(q.audio); });
     (b.groups || []).forEach(function (g) { chk(g && g.audio); });
+    if (b.book) {
+      (b.book.pages || []).forEach(function (pg) { if (pg && pg.id) ids[pg.id] = 1; });
+      Object.keys(b.book.parts || {}).forEach(function (k) { chk(b.book.parts[k]); });
+    }
   });
   return ids;
+}
+/** Ảnh trang sách đề trên Google Drive (chia sẻ "ai có link") */
+function QC_pageSrc(id) { return 'https://lh3.googleusercontent.com/d/' + id + '=w1600'; }
+/** Sách đề + file nghe theo Part của các ngân hàng "đề nguyên bộ" có trong đề này (gửi cho học sinh khi bắt đầu làm) */
+function QC_bookInfo(exam, paper) {
+  var out = null;
+  paper.items.forEach(function (it) {
+    var b = exam.banks[it.b];
+    if (!b || !b.book || (out && out[it.b])) return;
+    out = out || {};
+    var parts = {};
+    Object.keys(b.book.parts || {}).forEach(function (k) { var r = QC_audioRef(b, b.book.parts[k]); parts[k] = r || { missing: b.book.parts[k] }; });
+    out[it.b] = {
+      name: b.name || '',
+      pages: (b.book.pages || []).map(function (pg) { return { id: pg.id || null, src: pg.id ? QC_pageSrc(pg.id) : (pg.src || ''), sec: pg.sec || '', w: pg.w || 0, h: pg.h || 0 }; }),
+      parts: parts
+    };
+  });
+  return out;
 }
 
 /** Đề gửi cho học sinh — KHÔNG có đáp án */
@@ -552,6 +581,7 @@ function QC_publicPaper(exam, paper) {
     var q = bank.questions[it.q];
     var o = { type: q.type, stem: q.stem, sec: it.sec, pts: it.pts };
     if (q.skill) o.skill = q.skill;
+    if (bank.book) { o.bk = it.b; o.num = q.num; o.part = q.part; o.page = q.page == null ? null : q.page; }
     if (q.type === 'mc') {
       o.options = it.perm.map(function (i) { return q.options[i]; });
       o.multi = q.correct.length > 1;
@@ -660,7 +690,7 @@ function QC_review(exam, paper, g) {
     var q = exam.banks[it.b].questions[it.q], d = g.details[i];
     if (q.type === 'mc') {
       var disp = function (o) { return it.perm.indexOf(o); };
-      return { type: 'mc', stem: q.stem, options: it.perm.map(function (o) { return q.options[o]; }), chosen: d.chosen.map(disp), correct: q.correct.map(disp), ok: d.ok };
+      return { type: 'mc', num: q.num, stem: q.stem, options: it.perm.map(function (o) { return q.options[o]; }), chosen: d.chosen.map(disp), correct: q.correct.map(disp), ok: d.ok };
     }
     if (q.type === 'fill') return { type: 'fill', stem: q.stem, given: d.given, oks: d.oks, blanks: q.blanks, ok: d.ok };
     if (q.type === 'speak') return { type: 'speak', stem: q.stem, rec: d.rec, answer: q.answer || '' };
@@ -695,7 +725,8 @@ function QC_publicInfo(exam) {
     window: QC_window(st), maxAttempts: QC_maxAttempts(st), showReview: !!st.showReview, requireApp: !!st.requireApp,
     kind: exam.kind === 'en' ? 'en' : 'subject', audioPlays: st.audioPlays != null && st.audioPlays !== '' ? +st.audioPlays : 1,
     hasSpeak: paper.items.some(function (it) { return exam.banks[it.b].questions[it.q].type === 'speak'; }),
-    hasAudio: paper.items.some(function (it) { var b = exam.banks[it.b], q = b.questions[it.q]; return !!(q.audio || (q.g != null && b.groups && b.groups[q.g] && b.groups[q.g].audio)); }),
+    hasAudio: paper.items.some(function (it) { var b = exam.banks[it.b], q = b.questions[it.q]; return !!(q.audio || (b.book && q.skill === 'L') || (q.g != null && b.groups && b.groups[q.g] && b.groups[q.g].audio)); }),
+    booklet: paper.items.some(function (it) { return !!exam.banks[it.b].book; }),
     note: st.note || '',
     music: st.music && st.music.url ? { url: String(st.music.url), vol: +st.music.vol || 35, allowMute: st.music.allowMute !== false } : null
   };
@@ -704,6 +735,6 @@ function QC_publicInfo(exam) {
 var QuizCore = {
   version: QC_VERSION, hash: QC_hash, rng: QC_rng, shuffle: QC_shuffle, parseList: QC_parseList, parseCount: QC_parseCount,
   round: QC_round, normName: QC_normName, usable: QC_usable, buildPaper: QC_buildPaper, publicPaper: QC_publicPaper,
-  grade: QC_grade, publicInfo: QC_publicInfo, window: QC_window, maxAttempts: QC_maxAttempts, review: QC_review, totalLimit: QC_totalLimit, normAns: QC_normAns, audioRef: QC_audioRef, audioIds: QC_audioIds
+  grade: QC_grade, publicInfo: QC_publicInfo, window: QC_window, maxAttempts: QC_maxAttempts, review: QC_review, totalLimit: QC_totalLimit, normAns: QC_normAns, audioRef: QC_audioRef, audioIds: QC_audioIds, bookInfo: QC_bookInfo, pageSrc: QC_pageSrc
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = QuizCore;
