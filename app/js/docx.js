@@ -290,7 +290,8 @@
     }
   }
 
-  async function parseDocx(arrayBuffer, fileName) {
+  async function parseDocx(arrayBuffer, fileName, opts) {
+    const EN = !!(opts && opts.english);
     const zip = await readZip(arrayBuffer);
     const docXml = await zip.text('word/document.xml');
     if (!docXml) throw new Error('Không tìm thấy nội dung Word trong file');
@@ -470,22 +471,68 @@
     const RE_ANS = /^[\s ]*(?:đáp[\s ]*án|dap[\s ]*an|đ\/a|ĐA|hướng[\s ]*dẫn[\s ]*chấm|gợi[\s ]*ý|answer)[\s ]*(?:đúng)?[\s ]*[:.\-]?[\s ]*/i;
     const questions = [];
     let cur = null, mode = 'stem';
+    // Đề Tiếng Anh: kỹ năng đang đọc (L nghe, R đọc, W viết, S nói), nhóm câu dùng chung đoạn văn / đoạn nghe
+    const groups = [];
+    let curSkill = null, curGrp = null, grpCollect = false, pendingAudio = null;
+    const RE_AUDIO = /\[[\s\u00A0]*(?:audio|âm[\s\u00A0]*thanh|am[\s\u00A0]*thanh|file[\s\u00A0]*nghe|nghe)[\s\u00A0]*:[\s\u00A0]*([^\]]+?)[\s\u00A0]*\]/i;
+    const RE_GRP = /^[\s\u00A0]*(?:(?:đoạn(?:[\s\u00A0]*(?:văn|hội[\s\u00A0]*thoại|nghe|đọc))?|bài[\s\u00A0]*đọc|hội[\s\u00A0]*thoại|bài[\s\u00A0]*nghe|passage|conversation|talk|text|announcement|article|e-?mail|letter|notice|advertisement)[\s\u00A0]*\d{0,3}[\s\u00A0]*[:.]|questions?[\s\u00A0]+\d+[\s\u00A0]*[-–][\s\u00A0]*\d+[\s\u00A0]+(?:refer|are[\s\u00A0]+based))/i;
+    const RE_GRP_END = /^[\s\u00A0]*\[[\s\u00A0]*(?:\/[\s\u00A0]*đoạn|hết[\s\u00A0]*đoạn|\/[\s\u00A0]*passage|end)[\s\u00A0]*\][\s\u00A0]*$/i;
+    function skillOf(t) {
+      const s = t.toLowerCase();
+      if (/listening|nghe/.test(s)) return 'L';
+      if (/reading|đọc|doc hieu/.test(s)) return 'R';
+      if (/writing|viết/.test(s)) return 'W';
+      if (/speaking|(^|[^a-zà-ỹ])nói/.test(s)) return 'S';
+      const m = s.match(/(^|\s)part[\s\u00A0]+(\d)\b/);
+      if (m) return +m[2] <= 4 ? 'L' : 'R';
+      return null;
+    }
+    function secs(txt) { if (!txt) return null; const m = txt.match(/(\d+)[\s\u00A0]*(?:giây|giay|s|sec|seconds?)\b/i); return m ? +m[1] : null; }
     function points(txt) { if (!txt) return null; const m = txt.match(/(\d+(?:[.,]\d+)?)[\s ]*(?:đ|điểm|diem)/i); return m ? parseFloat(m[1].replace(',', '.')) : null; }
-    function newQ(num, segs, pts) { cur = { num, stem: [], opts: [], ans: [], ansText: [], pts }; questions.push(cur); mode = 'stem'; if (segs.length) cur.stem.push(segs); }
+    function newQ(num, segs, pts, head) {
+      cur = { num, stem: [], opts: [], ans: [], ansText: [], pts, skill: curSkill, g: curGrp, audio: pendingAudio, rec: secs(head) };
+      pendingAudio = null; grpCollect = false;
+      questions.push(cur); mode = 'stem'; if (segs.length) cur.stem.push(segs);
+    }
     function labelMarked(segs, labelEnd) {
       const lab = sliceSegs(segs, 0, labelEnd).filter(s => s.t === 'x' && s.s.trim());
       return lab.some(s => s.u || s.mark || s.red);
     }
     function handlePara(segs) {
-      const plain = plainOf(segs);
+      let plain = plainOf(segs);
       if (!plain.trim() && !segs.some(s => s.t === 'img' || s.t === 'html')) return;
-      // Tiêu đề phần ("PHẦN I. TRẮC NGHIỆM", "Part 2", "--- HẾT ---") kết thúc câu đang đọc
-      if (/^[\s\u00A0]*(phần|phan|part)[\s\u00A0]+([ivx]+|\d+|[a-dA-D])\b|^[\s\u00A0]*[-–—*.]*[\s\u00A0]*(hết|het|the end)[\s\u00A0]*[-–—*.]*[\s\u00A0]*$/i.test(plain)) { cur = null; mode = 'stem'; return; }
+      // [AUDIO: tên file] — gắn file nghe cho đoạn / câu đang đọc
+      let am, guard = 0;
+      while ((am = plain.match(RE_AUDIO)) && guard++ < 5) {
+        const name = am[1].trim();
+        segs = trimSegs(sliceSegs(segs, 0, am.index).concat(sliceSegs(segs, am.index + am[0].length, plain.length)));
+        plain = plainOf(segs);
+        // dòng mở đầu câu hỏi / đoạn mới => file nghe thuộc câu / đoạn mới đó
+        if (RE_Q.test(plain) || (EN && RE_GRP.test(plain))) pendingAudio = name;
+        else if (grpCollect && curGrp != null) groups[curGrp].audio = name;
+        else if (cur) cur.audio = name;
+        else if (curGrp != null) groups[curGrp].audio = name;
+        else pendingAudio = name;
+      }
+      if (!plain.trim() && !segs.some(s => s.t === 'img' || s.t === 'html')) return;
+      if (RE_GRP_END.test(plain)) { curGrp = null; grpCollect = false; cur = null; mode = 'stem'; return; }
+      // Tiêu đề phần ("PHẦN I. TRẮC NGHIỆM", "Part 2", "LISTENING", "--- HẾT ---") kết thúc câu đang đọc
+      const isHead = /^[\s\u00A0]*(phần|phan|part)[\s\u00A0]+([ivx]+|\d+|[a-dA-D])\b|^[\s\u00A0]*[-–—*.]*[\s\u00A0]*(hết|het|the end)[\s\u00A0]*[-–—*.]*[\s\u00A0]*$/i.test(plain) ||
+        /^[\s\u00A0]*(listening|reading|writing|speaking)([\s\u00A0]+(comprehension|section|test|part))?[\s\u00A0:.\-–]*$/i.test(plain);
+      if (isHead) { const sk = EN ? skillOf(plain) : null; if (sk) curSkill = sk; cur = null; mode = 'stem'; curGrp = null; grpCollect = false; return; }
       let m = plain.match(RE_Q);
       if (m) {
-        newQ(+m[1], trimSegs(sliceSegs(segs, m[0].length, plain.length)), points(m[2]));
+        newQ(+m[1], trimSegs(sliceSegs(segs, m[0].length, plain.length)), points(m[2]), m[2]);
         return;
       }
+      if (EN && (m = plain.match(RE_GRP)) && (!cur || mode !== 'answer')) {
+        groups.push({ title: plain.slice(0, m[0].length).replace(/[:.]\s*$/, '').trim(), stem: [], audio: pendingAudio, skill: curSkill });
+        pendingAudio = null; curGrp = groups.length - 1; grpCollect = true; cur = null; mode = 'stem';
+        const rest = trimSegs(sliceSegs(segs, m[0].length, plain.length));
+        if (rest.length) groups[curGrp].stem.push(rest);
+        return;
+      }
+      if (grpCollect && curGrp != null && !cur) { groups[curGrp].stem.push(trimSegs(segs)); return; }
       if ((!cur || cur.opts.length >= 2 || mode === 'answer') && (m = plain.match(RE_QNUM)) && !RE_OPT.test(plain)) {
         newQ(+m[1], trimSegs(sliceSegs(segs, m[0].length, plain.length)), null); return;
       }
@@ -508,8 +555,8 @@
           // có thể nhiều phương án trên 1 dòng: "A) ...  B) ...  C) ..."
           const cuts = [{ at: 0, len: m[0].length, star: !!m[1] }];
           let nextL = letter + 1;
-          const re = /(^|[\s \t])(\*?)([A-H])[\s ]*[).][\s ]+/g;
-          re.lastIndex = m[0].length;
+          const re = /(^|[\s\u00A0\t])(\*?)([A-H])[\s\u00A0]*[).](?=[\s\u00A0]|$)/g;
+          re.lastIndex = m[0].replace(/[\s\u00A0]+$/, '').length;
           let mm;
           while ((mm = re.exec(plain))) {
             if (mm[3].charCodeAt(0) - 65 !== nextL) continue;
@@ -541,7 +588,7 @@
       const joinParas = (ps) => { const o = []; ps.forEach((p, i) => { const t = trimSegs(p); if (!t.length) return; if (o.length) o.push({ t: 'br' }); o.push(...t); }); return o; };
       let m;
       if (cells.length >= 2 && (m = c0.match(/^(?:câu|cau)?[\s ]*(\d{1,3})[\s ]*[.:)]?[\s ]*(?:\(([^)]*)\))?$/i))) {
-        newQ(+m[1], joinParas(restParas), points(m[2])); if (!cur.stem.length) cur.stem = []; continue;
+        newQ(+m[1], joinParas(restParas), points(m[2]), m[2]); if (!cur.stem.length) cur.stem = []; continue;
       }
       if (cells.length >= 2 && cur && (m = c0.match(/^(\*?)[\s ]*([A-Ha-h])[\s ]*[).]?$/))) {
         const letter = m[2].toUpperCase().charCodeAt(0) - 65;
@@ -570,9 +617,17 @@
     const result = [];
     questions.forEach((q, idx) => {
       const stemSegs = joinBlocks(q.stem);
-      const item = { n: idx + 1, num: q.num, stem: segsToHtml(stemSegs), text: plainOf(stemSegs).replace(/￼/g, '[CT]').trim() };
+      const item = { n: idx + 1, num: q.num, stem: segsToHtml(stemSegs), text: plainOf(stemSegs).replace(/\uFFFC/g, '[CT]').trim() };
       if (q.pts) item.pts = q.pts;
-      if (q.opts.length >= 2) {
+      if (q.skill) item.skill = q.skill;
+      if (q.g != null) item.g = q.g;
+      if (q.audio) item.audio = q.audio;
+      if (q.skill === 'S' && q.opts.length < 2) {
+        // Câu NÓI: học sinh ghi âm câu trả lời, giáo viên nghe và chấm
+        item.type = 'speak';
+        item.rec = q.rec || 60;
+        item.answer = segsToHtml(joinBlocks(q.ansText));
+      } else if (q.opts.length >= 2) {
         item.type = 'mc';
         item.options = q.opts.map(o => segsToHtml(joinBlocks(o.segs)));
         item.optText = q.opts.map(o => plainOf(joinBlocks(o.segs)).replace(/￼/g, '[CT]').trim());
@@ -615,10 +670,13 @@
           if (q.opts.length === 1) item.warn = 'Chỉ có 1 phương án — đang coi là câu tự luận';
         }
       }
-      if (!item.text && !/img|omath/.test(item.stem)) item.warn = (item.warn ? item.warn + '; ' : '') + 'Nội dung câu hỏi trống';
+      const hasAudio = !!(item.audio || (q.g != null && groups[q.g] && groups[q.g].audio));
+      if (!item.text && !/img|omath/.test(item.stem) && !hasAudio && q.g == null) item.warn = (item.warn ? item.warn + '; ' : '') + 'Nội dung câu hỏi trống';
+      if (q.skill === 'L' && !hasAudio) item.warn = (item.warn ? item.warn + '; ' : '') + 'Câu nghe chưa gắn file nghe [AUDIO: …]';
       result.push(item);
     });
-    return { name: (fileName || 'De').replace(/\.docx$/i, ''), questions: result, warnings };
+    const outGroups = groups.map(g => ({ title: g.title, stem: segsToHtml(joinBlocks(g.stem)), audio: g.audio || null, skill: g.skill || null }));
+    return { name: (fileName || 'De').replace(/\.docx$/i, ''), questions: result, groups: outGroups, warnings };
   }
 
   const api = { readZip, parseDocx, wmfToSvg, mapChar };

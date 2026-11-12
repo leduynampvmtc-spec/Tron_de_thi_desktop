@@ -13,7 +13,8 @@
 <style>
   .grp { display: grid; grid-template-columns: 1.6fr 1fr .8fr 1fr .8fr .7fr auto auto; gap: 8px; align-items: end; padding: 10px; border: 1px solid var(--line); border-radius: 11px; margin-bottom: 8px; background: var(--soft); }
   .grp label { font-size: .76rem; }
-  @media (max-width: 900px) { .grp { grid-template-columns: 1fr 1fr; } }
+  .grp.en { grid-template-columns: 1.5fr .9fr 1fr .8fr 1fr .8fr .7fr auto auto; }
+  @media (max-width: 900px) { .grp, .grp.en { grid-template-columns: 1fr 1fr; } }
   .bank { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; }
   .bank .nm { flex: 1 1 260px; min-width: 0; }
   .bank .nm input { font-weight: 600; }
@@ -37,6 +38,7 @@
       <button class="tab" data-tab="build">2. Tạo đề &amp; link</button>
       <button class="tab" data-tab="results">3. Kết quả</button>
       <button class="tab" data-tab="setup">Cài đặt máy chủ</button>
+      <a class="tab swmode" href="tienganh.html">Đề Tiếng Anh →</a>
     </nav>
   </div>
 </header>
@@ -225,7 +227,7 @@
 
 <div class="modal-bg" id="modal"><div class="modal" id="modalBody"></div></div>
 
-<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.5</span></div></footer>
+<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.6</span></div></footer>
 
 <script src="js/config.js"></script>
 <script src="js/common.js"></script>

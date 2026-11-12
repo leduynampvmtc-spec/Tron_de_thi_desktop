@@ -2,7 +2,7 @@
  * core.js — Lõi trộn đề / chấm điểm (dùng chung cho trình duyệt và
  * máy chủ Google Apps Script). Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí
  * ===================================================================== */
-var QC_VERSION = '1.0';
+var QC_VERSION = '1.6';
 
 function QC_hash(str) {
   var h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0;
@@ -65,7 +65,7 @@ function QC_usable(q) {
   if (!q || q.disabled) return false;
   if (q.type === 'mc') return q.options && q.options.length >= 2 && q.correct && q.correct.length > 0;
   if (q.type === 'fill') return !!(q.blanks && q.blanks.length && q.blanks.every(function (b) { return b && b.length; }));
-  return q.type === 'essay';
+  return q.type === 'essay' || q.type === 'speak';
 }
 /** Chuẩn hoá câu trả lời điền khuyết: không phân biệt hoa/thường, dấu nháy cong/thẳng, khoảng trắng thừa, dấu câu cuối */
 function QC_normAns(s) {
@@ -75,8 +75,10 @@ function QC_normAns(s) {
 
 /**
  * Tạo đề cho 1 lượt thi.
- * exam.groups: [{bank, pick:'random'|'fixed', range, count, list, sec, pts, shuffleOpts}]
+ * exam.groups: [{bank, pick:'random'|'fixed', range, count, list, sec, pts, shuffleOpts, skill}]
  * exam.settings: {order:'mix'|'group'|'keep', shuffleOpts, sec, sameForAll}
+ * Câu thuộc cùng một đoạn văn / đoạn nghe (q.g) luôn đi cùng nhau, đúng thứ tự (một "khối").
+ * Đề không có đoạn dùng chung => kết quả trộn y hệt các phiên bản trước.
  */
 function QC_buildPaper(exam, seedStr) {
   var st = exam.settings || {};
@@ -88,54 +90,113 @@ function QC_buildPaper(exam, seedStr) {
     if (!bank) return;
     var qs = bank.questions || [];
     used[g.bank] = used[g.bank] || {};
-    var chosen;
+    var okSkill = function (i) { return !g.skill || g.skill === 'all' || qs[i].skill === g.skill; };
+    var toUnits = function (list) {
+      var units = [], byKey = {};
+      list.forEach(function (i) {
+        var gk = qs[i].g;
+        if (gk == null) { units.push([i]); return; }
+        if (!byKey[gk]) { byKey[gk] = []; units.push(byKey[gk]); }
+        byKey[gk].push(i);
+      });
+      units.forEach(function (u) { if (u.length > 1) u.sort(function (a, b) { return a - b; }); });
+      return units;
+    };
+    var units;
     if (g.pick === 'fixed') {
-      chosen = QC_parseList(g.list, qs.length).filter(function (i) { return QC_usable(qs[i]) && !used[g.bank][i]; });
+      units = toUnits(QC_parseList(g.list, qs.length).filter(function (i) { return QC_usable(qs[i]) && !used[g.bank][i] && okSkill(i); }));
     } else {
       var pool = (g.range && String(g.range).trim()) ? QC_parseList(g.range, qs.length) : qs.map(function (_, i) { return i; });
-      pool = pool.filter(function (i) { return QC_usable(qs[i]) && !used[g.bank][i]; });
+      pool = pool.filter(function (i) { return QC_usable(qs[i]) && !used[g.bank][i] && okSkill(i); });
+      var all = toUnits(pool);
       var n = QC_parseCount(g.count, rnd);
       if (!(n > 0) || n > pool.length) n = pool.length;
-      chosen = QC_shuffle(pool.slice(), rnd).slice(0, n);
-      if (st.order === 'keep') chosen.sort(function (a, b) { return a - b; });
+      var sh = QC_shuffle(all.slice(), rnd);
+      units = []; var total = 0;
+      for (var k = 0; k < sh.length && total < n; k++) { if (total + sh[k].length <= n) { units.push(sh[k]); total += sh[k].length; } }
+      if (st.order === 'keep') units.sort(function (a, b) { return a[0] - b[0]; });
     }
-    var items = chosen.map(function (qi) {
-      used[g.bank][qi] = 1;
-      var q = qs[qi];
-      var perm = null;
-      if (q.type === 'mc') {
-        perm = q.options.map(function (_, i) { return i; });
-        var doShuffle = st.shuffleOpts !== false && g.shuffleOpts !== false;
-        if (doShuffle) {
-          var pin = q.pin || [];
-          var free = perm.filter(function (i) { return !pin[i]; });
-          var sh = QC_shuffle(free.slice(), rnd);
-          var k = 0;
-          perm = perm.map(function (i) { return pin[i] ? i : sh[k++]; });
+    var unitItems = units.map(function (u) {
+      return u.map(function (qi) {
+        used[g.bank][qi] = 1;
+        var q = qs[qi];
+        var perm = null;
+        if (q.type === 'mc') {
+          perm = q.options.map(function (_, i) { return i; });
+          // câu NGHE không trộn phương án (băng đọc A, B, C, D theo thứ tự)
+          var doShuffle = st.shuffleOpts !== false && g.shuffleOpts !== false && q.skill !== 'L';
+          if (doShuffle) {
+            var pin = q.pin || [];
+            var free = perm.filter(function (i) { return !pin[i]; });
+            var shp = QC_shuffle(free.slice(), rnd);
+            var kk = 0;
+            perm = perm.map(function (i) { return pin[i] ? i : shp[kk++]; });
+          }
         }
-      }
-      var sec = (q.sec != null && q.sec !== '') ? +q.sec : (g.sec != null && g.sec !== '' ? +g.sec : (st.sec != null && st.sec !== '' ? +st.sec : 60));
-      var pts = (q.pts != null && q.pts !== '') ? +q.pts : (g.pts != null && g.pts !== '' ? +g.pts : 1);
-      return { b: g.bank, q: qi, g: gi, perm: perm, sec: sec, pts: pts };
+        var sec = (q.sec != null && q.sec !== '') ? +q.sec : (g.sec != null && g.sec !== '' ? +g.sec : (st.sec != null && st.sec !== '' ? +st.sec : 60));
+        var pts = (q.pts != null && q.pts !== '') ? +q.pts : (g.pts != null && g.pts !== '' ? +g.pts : 1);
+        var it = { b: g.bank, q: qi, g: gi, perm: perm, sec: sec, pts: pts };
+        if (q.g != null) it.grp = g.bank + ':' + q.g;
+        return it;
+      });
     });
-    if (st.order === 'group') QC_shuffle(items, rnd);
-    blocks.push(items);
+    if (st.order === 'group') QC_shuffle(unitItems, rnd);
+    blocks.push(unitItems);
   });
-  var all = [].concat.apply([], blocks);
-  if (st.order === 'mix' || !st.order) QC_shuffle(all, rnd);
-  return { items: all };
+  var allUnits = [].concat.apply([], blocks);
+  if (st.order === 'mix' || !st.order) QC_shuffle(allUnits, rnd);
+  return { items: [].concat.apply([], allUnits) };
+}
+
+/** Link nghe: tên file đã tải lên (bank.audio) hoặc link Google Drive / mp3 */
+function QC_audioRef(bank, ref) {
+  if (!ref) return null;
+  ref = String(ref).trim();
+  if (/^https?:\/\//i.test(ref)) {
+    var m = ref.match(/drive\.google\.com\/(?:file\/d\/|open\?(?:.*&)?id=|uc\?(?:.*&)?id=)([\w-]{20,})/);
+    return m ? { id: m[1], src: 'https://drive.google.com/uc?export=download&id=' + m[1] } : { id: null, src: ref };
+  }
+  var a = bank && bank.audio && (bank.audio[ref] || bank.audio[ref.toLowerCase()]);
+  if (a && a.id) return { id: a.id, src: 'https://drive.google.com/uc?export=download&id=' + a.id };
+  if (a && a.link) return QC_audioRef(bank, a.link);
+  return null;
+}
+/** Danh sách mã file Drive được phép phát cho đề này (chống đọc file Drive tùy ý) */
+function QC_audioIds(exam) {
+  var ids = {};
+  (exam.banks || []).forEach(function (b) {
+    Object.keys(b.audio || {}).forEach(function (k) { if (b.audio[k] && b.audio[k].id) ids[b.audio[k].id] = 1; });
+    var chk = function (ref) { var r = QC_audioRef(b, ref); if (r && r.id) ids[r.id] = 1; };
+    (b.questions || []).forEach(function (q) { chk(q.audio); });
+    (b.groups || []).forEach(function (g) { chk(g && g.audio); });
+  });
+  return ids;
 }
 
 /** Đề gửi cho học sinh — KHÔNG có đáp án */
 function QC_publicPaper(exam, paper) {
+  var pos = {}, size = {};
+  paper.items.forEach(function (it) { if (it.grp) size[it.grp] = (size[it.grp] || 0) + 1; });
   return paper.items.map(function (it) {
-    var q = exam.banks[it.b].questions[it.q];
+    var bank = exam.banks[it.b];
+    var q = bank.questions[it.q];
     var o = { type: q.type, stem: q.stem, sec: it.sec, pts: it.pts };
+    if (q.skill) o.skill = q.skill;
     if (q.type === 'mc') {
       o.options = it.perm.map(function (i) { return q.options[i]; });
       o.multi = q.correct.length > 1;
     } else if (q.type === 'fill') {
       o.nb = q.blanks.length;
+    } else if (q.type === 'speak') {
+      o.rec = +q.rec || 60;
+    }
+    var au = QC_audioRef(bank, q.audio);
+    if (q.audio) o.audio = au || { missing: q.audio };
+    if (it.grp) {
+      var gr = (bank.groups || [])[q.g] || {};
+      pos[it.grp] = (pos[it.grp] || 0) + 1;
+      o.group = { key: it.grp, title: gr.title || '', stem: gr.stem || '', pos: pos[it.grp], size: size[it.grp] };
+      if (gr.audio) o.group.audio = QC_audioRef(bank, gr.audio) || { missing: gr.audio };
     }
     return o;
   });
@@ -178,11 +239,35 @@ function QC_grade(exam, paper, answers, essayScores) {
       var e = graded ? Math.max(0, Math.min(it.pts, +sc)) : 0;
       if (!graded) res.essayPending++;
       res.essayEarned += e;
-      res.details.push({ type: 'essay', b: it.b, q: it.q, text: String(a == null ? '' : a).slice(0, 20000), pts: it.pts, earned: e, graded: graded });
+      if (q.type === 'speak') {
+        var rec = (a && typeof a === 'object' && a.rec) ? String(a.rec) : '';
+        res.details.push({ type: 'speak', b: it.b, q: it.q, rec: rec, dur: a && a.dur ? +a.dur : 0, pts: it.pts, earned: e, graded: graded });
+      } else {
+        res.details.push({ type: 'essay', b: it.b, q: it.q, text: String(a == null ? '' : a).slice(0, 20000), pts: it.pts, earned: e, graded: graded });
+      }
+    }
+    if (q.skill) {
+      var sk = res.skills || (res.skills = {});
+      var o = sk[q.skill] || (sk[q.skill] = { earned: 0, max: 0, right: 0, count: 0, pending: 0 });
+      var d = res.details[res.details.length - 1];
+      o.max += it.pts; o.earned += d.earned; o.count++;
+      if (d.ok) o.right++;
+      if ((d.type === 'essay' || d.type === 'speak') && !d.graded) o.pending++;
     }
   });
   res.earned = res.mcEarned + res.essayEarned;
   res.score = res.max > 0 ? QC_round(res.earned / res.max * scale, st.round || 0.1) : 0;
+  if (res.skills) {
+    Object.keys(res.skills).forEach(function (k) { var o = res.skills[k]; o.earned = Math.round(o.earned * 100) / 100; o.score = o.max > 0 ? QC_round(o.earned / o.max * 10, 0.1) : 0; });
+    if (st.toeic) {
+      // Quy đổi TOEIC THAM KHẢO (tuyến tính): Nghe 5–495, Đọc 5–495, Viết / Nói 0–200
+      var t = {}, lin = function (o, lo, hi, step) { return o && o.max ? Math.round((lo + (hi - lo) * o.earned / o.max) / step) * step : null; };
+      t.L = lin(res.skills.L, 5, 495, 5); t.R = lin(res.skills.R, 5, 495, 5);
+      t.W = lin(res.skills.W, 0, 200, 10); t.S = lin(res.skills.S, 0, 200, 10);
+      if (t.L != null || t.R != null) t.LR = (t.L || 0) + (t.R || 0);
+      res.toeic = t;
+    }
+  }
   return res;
 }
 
@@ -208,6 +293,7 @@ function QC_review(exam, paper, g) {
       return { type: 'mc', stem: q.stem, options: it.perm.map(function (o) { return q.options[o]; }), chosen: d.chosen.map(disp), correct: q.correct.map(disp), ok: d.ok };
     }
     if (q.type === 'fill') return { type: 'fill', stem: q.stem, given: d.given, oks: d.oks, blanks: q.blanks, ok: d.ok };
+    if (q.type === 'speak') return { type: 'speak', stem: q.stem, rec: d.rec, answer: q.answer || '' };
     return { type: 'essay', stem: q.stem, text: d.text, answer: q.answer || '' };
   });
 }
@@ -237,6 +323,9 @@ function QC_publicInfo(exam) {
     maxViolations: +st.maxViolations || 0, fullscreen: st.fullscreen !== false,
     showScore: st.showScore !== false, scale: +st.scale || 10,
     window: QC_window(st), maxAttempts: QC_maxAttempts(st), showReview: !!st.showReview, requireApp: !!st.requireApp,
+    kind: exam.kind === 'en' ? 'en' : 'subject', audioPlays: st.audioPlays != null && st.audioPlays !== '' ? +st.audioPlays : 1,
+    hasSpeak: paper.items.some(function (it) { return exam.banks[it.b].questions[it.q].type === 'speak'; }),
+    hasAudio: paper.items.some(function (it) { var b = exam.banks[it.b], q = b.questions[it.q]; return !!(q.audio || (q.g != null && b.groups && b.groups[q.g] && b.groups[q.g].audio)); }),
     note: st.note || '',
     music: st.music && st.music.url ? { url: String(st.music.url), vol: +st.music.vol || 35, allowMute: st.music.allowMute !== false } : null
   };
@@ -245,6 +334,6 @@ function QC_publicInfo(exam) {
 var QuizCore = {
   version: QC_VERSION, hash: QC_hash, rng: QC_rng, shuffle: QC_shuffle, parseList: QC_parseList, parseCount: QC_parseCount,
   round: QC_round, normName: QC_normName, usable: QC_usable, buildPaper: QC_buildPaper, publicPaper: QC_publicPaper,
-  grade: QC_grade, publicInfo: QC_publicInfo, window: QC_window, maxAttempts: QC_maxAttempts, review: QC_review, totalLimit: QC_totalLimit, normAns: QC_normAns
+  grade: QC_grade, publicInfo: QC_publicInfo, window: QC_window, maxAttempts: QC_maxAttempts, review: QC_review, totalLimit: QC_totalLimit, normAns: QC_normAns, audioRef: QC_audioRef, audioIds: QC_audioIds
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = QuizCore;

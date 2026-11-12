@@ -3,6 +3,11 @@
   'use strict';
   const { $, $$, esc, LS, IDB, api, toast, fmtTime, fmtDur, buildXlsx, download, linkParamForApi } = QA;
   const L = 'ABCDEFGH';
+  // Trang "Đề Tiếng Anh" dùng chung mã này với QUIZ_MODE = 'en' (ngân hàng & cấu hình lưu riêng)
+  const EN = window.QUIZ_MODE === 'en';
+  const K = { draft: EN ? 'draftEN' : 'draft', banks: EN ? 'banksEN' : 'banks', tab: EN ? 'tabEN' : 'tab' };
+  const SKN = { L: 'Nghe', R: 'Đọc', W: 'Viết', S: 'Nói' };
+  const TYPEN = { mc: 'Trắc nghiệm', fill: 'Điền khuyết', essay: 'Tự luận', speak: 'Nói (ghi âm)' };
   $('#authorBox').innerHTML = QA.AUTHOR_HTML;
 
   /* ------------------------------- tabs ------------------------------- */
@@ -11,7 +16,7 @@
     $$('.section').forEach(s => s.classList.toggle('on', s.id === 'sec-' + name));
     if (name === 'build') renderGroups();
     if (name === 'results') loadExams();
-    LS.set('tab', name);
+    LS.set(K.tab, name);
   }
   $$('.tab').forEach(t => t.onclick = () => showTab(t.dataset.tab));
 
@@ -33,13 +38,25 @@
 
   /* ------------------------------- banks ------------------------------- */
   let banks = [];
-  async function loadBanks() { banks = (await IDB.get('banks')) || LS.get('banks', []) || []; renderBanks(); }
-  async function saveBanks() { const ok = await IDB.set('banks', banks); if (!ok) LS.set('banks', banks); renderBanks(); }
+  async function loadBanks() { banks = (await IDB.get(K.banks)) || LS.get(K.banks, []) || []; renderBanks(); }
+  async function saveBanks() { const ok = await IDB.set(K.banks, banks); if (!ok) LS.set(K.banks, banks); renderBanks(); }
+  /** Các file nghe đề cần (tên file ghi trong [AUDIO: …]) */
+  function audioNeeds(b) {
+    const m = new Map();
+    const add = (ref, where) => { if (!ref || /^https?:/i.test(ref)) return; if (!m.has(ref)) m.set(ref, []); m.get(ref).push(where); };
+    (b.groups || []).forEach((g, gi) => add(g && g.audio, (g && g.title) || ('Đoạn ' + (gi + 1))));
+    b.questions.forEach((q, i) => add(q.audio, 'Câu ' + (i + 1)));
+    return m;
+  }
+  const hasAud = (b, name) => !!(b.audio && b.audio[name] && (b.audio[name].id || b.audio[name].link));
   function bankStats(b) {
     const mc = b.questions.filter(q => q.type === 'mc').length, fi = b.questions.filter(q => q.type === 'fill').length, es = b.questions.length - mc - fi;
     const usable = b.questions.filter(q => QuizCore.usable(q)).length;
-    const warn = b.questions.filter(q => q.warn && !q.disabled).length;
-    return { mc, fi, es, usable, warn };
+    const sk = { L: 0, R: 0, W: 0, S: 0, none: 0 };
+    b.questions.forEach(q => { if (!q.disabled && QuizCore.usable(q)) sk[q.skill || 'none']++; });
+    const needs = audioNeeds(b); let have = 0; needs.forEach((_, k) => { if (hasAud(b, k)) have++; });
+    const warn = b.questions.filter(q => q.warn && !q.disabled && !(/file nghe/.test(q.warn) && (hasAud(b, q.audio) || (q.g != null && b.groups && b.groups[q.g] && hasAud(b, b.groups[q.g].audio))))).length;
+    return { mc, fi, es, usable, warn, sk, audNeed: needs.size, audHave: have };
   }
   function renderBanks() {
     const el = $('#bankList');
@@ -48,7 +65,9 @@
     el.innerHTML = banks.map((b, i) => {
       const s = bankStats(b); total += s.usable;
       return '<div class="bank"><div class="nm"><input type="text" data-rename="' + i + '" value="' + esc(b.name) + '"><div class="hint">' + esc(b.file || '') + ' · ' + fmtTime(b.addedAt) + '</div></div>' +
-        '<span class="pill">' + s.mc + ' trắc nghiệm</span>' + (s.fi ? '<span class="pill">' + s.fi + ' điền khuyết</span>' : '') + (s.es ? '<span class="pill">' + s.es + ' tự luận</span>' : '') +
+        (EN ? ['L', 'R', 'W', 'S'].filter(k => s.sk[k]).map(k => '<span class="pill">' + SKN[k] + ' ' + s.sk[k] + '</span>').join('') + (s.sk.none ? '<span class="pill">Chưa rõ kỹ năng ' + s.sk.none + '</span>' : '') +
+          (s.audNeed ? '<span class="pill ' + (s.audHave < s.audNeed ? 'bad' : 'ok') + '">File nghe ' + s.audHave + '/' + s.audNeed + '</span>' : '')
+        : '<span class="pill">' + s.mc + ' trắc nghiệm</span>' + (s.fi ? '<span class="pill">' + s.fi + ' điền khuyết</span>' : '') + (s.es ? '<span class="pill">' + s.es + ' tự luận</span>' : '')) +
         (s.warn ? '<span class="pill warn">' + s.warn + ' câu cần kiểm tra</span>' : '<span class="pill ok">Hợp lệ</span>') +
         '<button class="btn sm" data-view="' + i + '">Xem / sửa</button><button class="btn sm danger" data-del="' + i + '">Xóa</button></div>';
     }).join('');
@@ -67,12 +86,12 @@
     for (const f of files) {
       if (!/\.docx$/i.test(f.name)) { msg.innerHTML += '<div class="msg bad">' + esc(f.name) + ': chỉ nhận file .docx (nếu là .doc, hãy mở bằng Word rồi Lưu thành .docx).</div>'; continue; }
       try {
-        const r = await QuizDocx.parseDocx(await f.arrayBuffer(), f.name);
+        const r = await QuizDocx.parseDocx(await f.arrayBuffer(), f.name, { english: EN });
         if (!r.questions.length) { msg.innerHTML += '<div class="msg bad">' + esc(f.name) + ': không nhận ra câu hỏi nào. Kiểm tra định dạng “Câu 1:” hoặc bảng “1. | câu hỏi”.</div>'; continue; }
-        const b = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: r.name, file: f.name, addedAt: Date.now(), questions: r.questions };
+        const b = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: r.name, file: f.name, addedAt: Date.now(), questions: r.questions, groups: r.groups || [], audio: {} };
         banks.push(b);
         const s = bankStats(b);
-        msg.innerHTML += '<div class="msg ' + (s.warn ? 'warn' : 'ok') + '">' + esc(f.name) + ': nhận ' + r.questions.length + ' câu (' + s.mc + ' trắc nghiệm, ' + s.fi + ' điền khuyết, ' + s.es + ' tự luận)' + (s.warn ? ' — ' + s.warn + ' câu cần kiểm tra (bấm “Xem / sửa”)' : '') + '.' + r.warnings.map(w => '<br>⚠ ' + esc(w)).join('') + '</div>';
+        msg.innerHTML += '<div class="msg ' + (s.warn ? 'warn' : 'ok') + '">' + esc(f.name) + ': nhận ' + r.questions.length + ' câu (' + (EN ? ['L', 'R', 'W', 'S'].map(k => SKN[k] + ' ' + s.sk[k]).join(', ') + (s.sk.none ? ', chưa rõ kỹ năng ' + s.sk.none : '') + (r.groups && r.groups.length ? '; ' + r.groups.length + ' đoạn dùng chung' : '') : s.mc + ' trắc nghiệm, ' + s.fi + ' điền khuyết, ' + s.es + ' tự luận') + ')' + (EN && s.audNeed ? ' — cần tải ' + s.audNeed + ' file nghe (bấm “Xem / sửa” → File nghe)' : '') + (s.warn ? ' — ' + s.warn + ' câu cần kiểm tra (bấm “Xem / sửa”)' : '') + '.' + r.warnings.map(w => '<br>⚠ ' + esc(w)).join('') + '</div>';
       } catch (e) { msg.innerHTML += '<div class="msg bad">' + esc(f.name) + ': ' + esc(e.message) + '</div>'; }
     }
     await saveBanks();
@@ -92,10 +111,14 @@
     const render = () => {
       modal('<div class="row"><h2 style="margin:0">' + esc(b.name) + '</h2><span class="spacer"></span><button class="btn sm" id="mClose">Đóng</button></div>' +
         '<p class="hint">Bấm vào một phương án để đặt/bỏ đáp án đúng. Ô “giây” và “điểm” để trống = dùng theo nhóm. Bỏ chọn “Dùng” để loại câu khỏi đề.</p>' +
+        audioPanel(b) +
         b.questions.map((q, qi) => {
           const bad = q.type === 'mc' && !(q.correct && q.correct.length);
-          return '<div class="qprev' + (q.disabled ? ' off' : '') + (bad ? ' bad' : '') + '"><div class="head"><b>Câu ' + (qi + 1) + '</b>' +
-            '<span class="pill">' + (q.type === 'mc' ? 'Trắc nghiệm' : q.type === 'fill' ? 'Điền khuyết' : 'Tự luận') + '</span>' + (q.warn ? '<span class="pill warn">' + esc(q.warn) + '</span>' : '') +
+          const gr = q.g != null && b.groups ? b.groups[q.g] : null;
+          const gHead = gr && (qi === 0 || b.questions[qi - 1].g !== q.g) ? '<div class="gprev"><b>' + esc(gr.title || 'Đoạn dùng chung') + '</b>' + (gr.skill ? ' <span class="pill">' + SKN[gr.skill] + '</span>' : '') + (gr.audio ? ' ' + audChip(b, gr.audio) : '') + (gr.stem ? '<div class="gstem">' + gr.stem + '</div>' : '') + '</div>' : '';
+          return gHead + '<div class="qprev' + (gr ? ' ing' : '') + (q.disabled ? ' off' : '') + (bad ? ' bad' : '') + '"><div class="head"><b>Câu ' + (qi + 1) + '</b>' +
+            (q.skill ? '<span class="pill">' + SKN[q.skill] + '</span>' : '') +
+            '<span class="pill">' + (TYPEN[q.type] || q.type) + (q.type === 'speak' ? ' ≤' + (q.rec || 60) + 's' : '') + '</span>' + (q.audio ? audChip(b, q.audio) : '') + (q.warn ? '<span class="pill warn">' + esc(q.warn) + '</span>' : '') +
             '<span class="spacer"></span><label class="check"><input type="checkbox" data-use="' + qi + '"' + (q.disabled ? '' : ' checked') + '> Dùng</label>' +
             '<input type="number" class="mini" min="0" placeholder="giây" title="Thời gian riêng cho câu này (giây)" data-sec="' + qi + '" value="' + (q.sec != null ? q.sec : '') + '">' +
             '<input type="number" class="mini" min="0" step="0.25" placeholder="điểm" title="Điểm riêng cho câu này" data-pts="' + qi + '" value="' + (q.pts != null ? q.pts : '') + '"></div>' +
@@ -105,6 +128,7 @@
               : (q.answer ? '<div class="hint"><b>Đáp án gợi ý:</b> ' + q.answer + '</div>' : '')) + '</div>';
         }).join(''));
       $('#mClose').onclick = () => { closeModal(); saveBanks(); };
+      bindAudioPanel(b, render);
       $$('.opt[data-q]').forEach(el => el.onclick = () => {
         const q = b.questions[+el.dataset.q], o = +el.dataset.o;
         const i = q.correct.indexOf(o); if (i >= 0) q.correct.splice(i, 1); else q.correct.push(o);
@@ -124,12 +148,67 @@
     render();
   }
 
+  /* ---------------------------- file nghe (đề Tiếng Anh) ---------------------------- */
+  function audChip(b, ref) {
+    if (/^https?:/i.test(ref)) return '<span class="pill ok" title="' + esc(ref) + '">🎧 link</span>';
+    return '<span class="pill ' + (hasAud(b, ref) ? 'ok' : 'bad') + '">🎧 ' + esc(ref) + (hasAud(b, ref) ? ' ✓' : ' — chưa tải') + '</span>';
+  }
+  function audioPanel(b) {
+    const needs = audioNeeds(b);
+    const extra = Object.keys(b.audio || {}).filter(k => !needs.has(k));
+    if (!needs.size && !extra.length) return '';
+    const rows = Array.from(needs.keys()).concat(extra).map(k => {
+      const a = (b.audio || {})[k];
+      return '<tr><td><b>' + esc(k) + '</b><div class="hint">' + esc((needs.get(k) || ['(không dùng trong đề)']).join(', ')) + '</div></td>' +
+        '<td>' + (a && a.id ? '<span class="pill ok">✓ Đã tải' + (a.size ? ' · ' + (a.size / 1048576).toFixed(1) + ' MB' : '') + '</span>' : a && a.link ? '<span class="pill ok">✓ Link</span>' : '<span class="pill bad">Chưa có</span>') + '</td>' +
+        '<td><input type="url" data-alink="' + esc(k) + '" placeholder="hoặc dán link Google Drive / mp3" value="' + esc(a && a.link || '') + '"></td></tr>';
+    }).join('');
+    return '<div class="audpanel"><div class="row"><h3 style="margin:0">🎧 File nghe</h3><span class="spacer"></span><label class="btn sm primary" for="audIn">Tải file nghe lên (chọn nhiều file)</label><input type="file" id="audIn" class="hide" multiple accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac"></div>' +
+      '<div class="hint">File được lưu vào Google Drive của thầy/cô (thư mục <b>TronDeThi_FileNghe</b>), tự ghép theo tên file ghi trong <code>[AUDIO: …]</code>. Mỗi file tối đa 30 MB. Tải xong nhớ <b>Lưu đề lên máy chủ</b> lại nếu đề đã tạo trước đó.</div>' +
+      '<div id="audMsg"></div><table class="tbl" style="margin-top:6px"><tr><th>Tên file trong đề</th><th>Trạng thái</th><th>Link thay thế</th></tr>' + rows + '</table></div>';
+  }
+  function fileB64(f) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(f); }); }
+  function bindAudioPanel(b, rerender) {
+    b.audio = b.audio || {};
+    $$('[data-alink]').forEach(inp => inp.onchange = () => {
+      const k = inp.dataset.alink, v = inp.value.trim();
+      if (v) b.audio[k] = { link: v }; else if (b.audio[k] && b.audio[k].link) delete b.audio[k];
+      saveBanks(); rerender();
+    });
+    const inp = $('#audIn'); if (!inp) return;
+    inp.onchange = async () => {
+      const files = Array.from(inp.files); inp.value = '';
+      if (!files.length) return;
+      if (!needConn()) return;
+      const needs = Array.from(audioNeeds(b).keys());
+      const base = (n) => n.toLowerCase().replace(/\.[a-z0-9]+$/, '').replace(/[\s_-]+/g, '');
+      for (const f of files) {
+        const box = $('#audMsg');
+        if (f.size > 30 * 1048576) { box.innerHTML += '<div class="msg bad">' + esc(f.name) + ': quá 30 MB — hãy nén lại (mp3 64–96 kbps) rồi tải.</div>'; continue; }
+        const key = needs.find(k => k.toLowerCase() === f.name.toLowerCase()) || needs.find(k => base(k) === base(f.name)) || f.name;
+        box.innerHTML += '<div class="msg info" id="up_' + base(f.name) + '">Đang tải ' + esc(f.name) + '…</div>';
+        try {
+          const r = await api(conf().api, { action: 'uploadAudio', key: conf().key, name: f.name, mime: f.type || 'audio/mpeg', b64: await fileB64(f) }, 1);
+          b.audio[key] = { id: r.id, name: f.name, size: f.size };
+          await saveBanks();
+          const el = document.getElementById('up_' + base(f.name)); if (el) { el.className = 'msg ok'; el.textContent = '✓ ' + f.name + (key !== f.name ? ' → ' + key : '') + (r.shared === false ? ' (chưa chia sẻ được — kiểm tra quyền Drive)' : ''); }
+        } catch (e) {
+          const el = document.getElementById('up_' + base(f.name)); if (el) { el.className = 'msg bad'; el.textContent = f.name + ': ' + e.message; }
+        }
+      }
+      setTimeout(rerender, 900);
+    };
+  }
+
   /* ------------------------------- exam draft ------------------------------- */
   const INFO_FIELDS = ['loai', 'loaiKhac', 'hinhThuc', 'mon', 'noiDung', 'lop', 'khoa', 'lan', 'ngay', 'gv', 'title'];
-  let draft = LS.get('draft', null) || { id: null, info: { gv: 'Lê Duy Nam', loai: 'Kiểm tra thường xuyên', hinhThuc: 'Mô đun' }, groups: [], settings: {} };
+  const newDraft = (gv) => EN
+    ? { id: null, info: { gv: gv || 'Lê Duy Nam', loai: 'Kiểm tra Tiếng Anh', hinhThuc: 'Môn học', mon: 'Tiếng Anh' }, groups: [], settings: { navMode: 'free', freeTime: 'total', order: 'group', audioPlays: 1, sec: 60 } }
+    : { id: null, info: { gv: gv || 'Lê Duy Nam', loai: 'Kiểm tra thường xuyên', hinhThuc: 'Mô đun' }, groups: [], settings: {} };
+  let draft = LS.get(K.draft, null) || newDraft();
   function fillForm() {
     INFO_FIELDS.forEach(k => { const el = $('#i_' + k); if (el) el.value = draft.info[k] || ''; });
-    if (!$('#i_loai').value) $('#i_loai').value = 'Kiểm tra thường xuyên';
+    if (!$('#i_loai').value) $('#i_loai').value = EN ? 'Kiểm tra Tiếng Anh' : 'Kiểm tra thường xuyên';
     if (!$('#i_hinhThuc').value) $('#i_hinhThuc').value = 'Mô đun';
     $('#i_loaiKhac').classList.toggle('hide', $('#i_loai').value !== '__other');
     const s = draft.settings || {};
@@ -139,6 +218,8 @@
     const ma = QuizCore.maxAttempts(s);
     $('#s_unlim').checked = ma === 0; $('#s_maxA').value = ma || (s.maxAttempts > 0 ? s.maxAttempts : 1); $('#s_maxA').disabled = ma === 0;
     $('#s_policy').value = s.scorePolicy || 'max'; $('#s_review').checked = !!s.showReview; $('#s_requireApp').checked = !!s.requireApp;
+    if ($('#s_plays')) $('#s_plays').value = String(s.audioPlays != null && s.audioPlays !== '' ? s.audioPlays : 1);
+    if ($('#s_toeic')) $('#s_toeic').checked = !!s.toeic;
     $('#s_nav').value = s.navMode === 'free' ? 'free' : 'strict'; $('#s_ftime').value = s.freeTime === 'total' ? 'total' : 'none'; $('#s_tmin').value = s.totalMin || '';
     navUI();
     $('#s_shuffleOpts').checked = s.shuffleOpts !== false; $('#s_same').checked = !!s.sameForAll; $('#s_showScore').checked = s.showScore !== false;
@@ -198,12 +279,13 @@
       maxAttempts: $('#s_unlim').checked ? 0 : Math.max(1, +$('#s_maxA').value || 1), unlimited: $('#s_unlim').checked,
       scorePolicy: $('#s_policy').value, showReview: $('#s_review').checked, requireApp: $('#s_requireApp').checked,
       navMode: $('#s_nav').value, freeTime: $('#s_ftime').value, totalMin: +$('#s_tmin').value || 0,
+      audioPlays: $('#s_plays') ? +$('#s_plays').value : 1, toeic: $('#s_toeic') ? $('#s_toeic').checked : false,
       shuffleOpts: $('#s_shuffleOpts').checked, sameForAll: $('#s_same').checked, showScore: $('#s_showScore').checked,
       fullscreen: $('#s_full').checked, requireMssv: $('#s_mssv').checked,
       roster: $('#s_roster').value.split(/\r?\n/).map(x => x.replace(/\t/g, ' ').trim()).filter(Boolean), note: $('#s_note').value.trim(),
       music: $('#s_music').value.trim() ? { url: $('#s_music').value.trim(), vol: +$('#s_musicVol').value || 35, allowMute: $('#s_musicMute').checked } : null
     };
-    LS.set('draft', draft);
+    LS.set(K.draft, draft);
   }
   $('#i_loai').addEventListener('change', () => $('#i_loaiKhac').classList.toggle('hide', $('#i_loai').value !== '__other'));
   $('#sec-build').addEventListener('change', (e) => { if (!e.target.closest('#groups')) readForm(); });
@@ -216,12 +298,19 @@
     const el = $('#groups');
     if (!banks.length) { el.innerHTML = '<div class="msg info">Hãy nạp ngân hàng câu hỏi ở bước 1 trước.</div>'; $('#groupSum').innerHTML = ''; return; }
     draft.groups = draft.groups.filter(g => banks.some(b => b.id === g.bankId));
-    if (!draft.groups.length) draft.groups.push({ bankId: banks[0].id, pick: 'random', count: '', range: '', list: '', sec: '', pts: '', shuffleOpts: true });
+    if (!draft.groups.length) {
+      const sk = bankStats(banks[0]).sk;
+      const ks = EN ? ['L', 'R', 'W', 'S'].filter(k => sk[k]) : [];
+      if (ks.length) ks.forEach(k => draft.groups.push({ bankId: banks[0].id, skill: k, pick: 'random', count: '', range: '', list: '', sec: '', pts: '', shuffleOpts: true }));
+      else draft.groups.push({ bankId: banks[0].id, pick: 'random', count: '', range: '', list: '', sec: '', pts: '', shuffleOpts: true });
+    }
     el.innerHTML = draft.groups.map((g, i) => {
       const b = banks.find(x => x.id === g.bankId);
-      const n = b ? bankStats(b).usable : 0;
-      return '<div class="grp" data-g="' + i + '">' +
+      const bs = b ? bankStats(b) : null;
+      const n = bs ? (EN && g.skill && g.skill !== 'all' ? bs.sk[g.skill] : bs.usable) : 0;
+      return '<div class="grp' + (EN ? ' en' : '') + '" data-g="' + i + '">' +
         '<div><label>Ngân hàng (' + n + ' câu)</label><select data-k="bankId">' + banks.map(x => '<option value="' + x.id + '"' + (x.id === g.bankId ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select></div>' +
+        (EN ? '<div><label>Kỹ năng</label><select data-k="skill">' + [['all', 'Tất cả'], ['L', 'Nghe'], ['R', 'Đọc'], ['W', 'Viết'], ['S', 'Nói']].map(o => '<option value="' + o[0] + '"' + ((g.skill || 'all') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select></div>' : '') +
         '<div><label>Cách lấy</label><select data-k="pick"><option value="random"' + (g.pick !== 'fixed' ? ' selected' : '') + '>Ngẫu nhiên</option><option value="fixed"' + (g.pick === 'fixed' ? ' selected' : '') + '>Chỉ định câu</option></select></div>' +
         (g.pick === 'fixed'
           ? '<div style="grid-column:span 2"><label>Danh sách câu</label><input type="text" data-k="list" value="' + esc(g.list) + '" placeholder="vd 1-10, 15, 20"></div>'
@@ -237,16 +326,16 @@
         inp.onchange = inp.oninput = () => {
           const k = inp.dataset.k;
           g[k] = inp.type === 'checkbox' ? inp.checked : inp.value;
-          LS.set('draft', draft);
-          if (k === 'pick' || k === 'bankId') { if (inp.type !== 'text') renderGroups(); }
+          LS.set(K.draft, draft);
+          if (k === 'pick' || k === 'bankId' || k === 'skill') { if (inp.type !== 'text') renderGroups(); }
           summarize();
         };
       });
     });
-    $$('[data-rm]', el).forEach(b => b.onclick = () => { draft.groups.splice(+b.dataset.rm, 1); LS.set('draft', draft); renderGroups(); });
+    $$('[data-rm]', el).forEach(b => b.onclick = () => { draft.groups.splice(+b.dataset.rm, 1); LS.set(K.draft, draft); renderGroups(); });
     summarize();
   }
-  $('#addGroup').onclick = () => { if (!banks.length) return; const used = draft.groups.map(g => g.bankId); const nb = banks.find(b => !used.includes(b.id)) || banks[0]; draft.groups.push({ bankId: nb.id, pick: 'random', count: '', range: '', list: '', sec: '', pts: '', shuffleOpts: true }); LS.set('draft', draft); renderGroups(); };
+  $('#addGroup').onclick = () => { if (!banks.length) return; const used = draft.groups.map(g => g.bankId); const nb = banks.find(b => !used.includes(b.id)) || banks[0]; draft.groups.push({ bankId: nb.id, pick: 'random', count: '', range: '', list: '', sec: '', pts: '', shuffleOpts: true }); LS.set(K.draft, draft); renderGroups(); };
 
   /** Đóng gói đề để gửi máy chủ / xem thử */
   function buildExam() {
@@ -254,15 +343,15 @@
     const used = [];
     const groups = draft.groups.map(g => {
       let bi = used.indexOf(g.bankId); if (bi < 0) { used.push(g.bankId); bi = used.length - 1; }
-      return { bank: bi, pick: g.pick, count: g.count, range: g.range, list: g.list, sec: g.sec === '' ? null : +g.sec, pts: g.pts === '' ? null : +g.pts, shuffleOpts: g.shuffleOpts !== false };
+      return { bank: bi, pick: g.pick, count: g.count, range: g.range, list: g.list, sec: g.sec === '' ? null : +g.sec, pts: g.pts === '' ? null : +g.pts, shuffleOpts: g.shuffleOpts !== false, skill: EN && g.skill && g.skill !== 'all' ? g.skill : undefined };
     });
     const ebanks = used.map(id => {
       const b = banks.find(x => x.id === id);
-      return { name: b.name, questions: b.questions.map(q => ({ type: q.type, stem: q.stem, options: q.options, correct: q.correct, pin: q.pin, answer: q.answer, blanks: q.blanks, sec: q.sec, pts: q.pts, disabled: !!q.disabled || !QuizCore.usable(q) })) };
+      return { name: b.name, groups: b.groups || [], audio: b.audio || {}, questions: b.questions.map(q => ({ type: q.type, stem: q.stem, options: q.options, correct: q.correct, pin: q.pin, answer: q.answer, blanks: q.blanks, sec: q.sec, pts: q.pts, skill: q.skill, g: q.g, audio: q.audio, rec: q.rec, disabled: !!q.disabled || !QuizCore.usable(q) })) };
     });
     const info = Object.assign({}, draft.info, { loai: loaiText(draft.info) });
     delete info.loaiKhac;
-    return { id: draft.id || null, title: draft.info.title || autoTitle(draft.info), info, banks: ebanks, groups, settings: draft.settings, author: 'Lê Duy Nam — GV Trường Cao đẳng Dầu khí' };
+    return { id: draft.id || null, kind: EN ? 'en' : undefined, title: draft.info.title || autoTitle(draft.info), info, banks: ebanks, groups, settings: draft.settings, author: 'Lê Duy Nam — GV Trường Cao đẳng Dầu khí' };
   }
   function summarize() {
     if (!banks.length || !draft.groups.length) return;
@@ -275,7 +364,7 @@
     $('#groupSum').innerHTML = '<span>Tổng: <b>' + (ranged ? '~' : '') + p.items.length + ' câu</b></span>' + (es ? '<span>(' + es + ' tự luận)</span>' : '') +
       '<span>' + (free ? 'Chế độ <b>Tự do</b> · thời gian cả bài: <b>' + (lim ? fmtDur(lim) : 'không giới hạn (ôn tập)') + '</b>' : 'Thời gian tối đa: <b>' + (unl ? 'không giới hạn' : fmtDur(sec)) + '</b>') + '</span><span>Tổng điểm thô: <b>' + pts + '</b> → quy về thang ' + (draft.settings.scale || 10) + '</span>';
   }
-  $('#btnNew').onclick = () => { if (!confirm('Bắt đầu đề mới? (Cấu hình hiện tại sẽ được làm mới, ngân hàng vẫn giữ)')) return; draft = { id: null, info: { gv: draft.info.gv, loai: 'Kiểm tra thường xuyên', hinhThuc: 'Mô đun' }, groups: [], settings: {} }; LS.set('draft', draft); fillForm(); renderGroups(); $('#linkOut').innerHTML = ''; };
+  $('#btnNew').onclick = () => { if (!confirm('Bắt đầu đề mới? (Cấu hình hiện tại sẽ được làm mới, ngân hàng vẫn giữ)')) return; draft = newDraft(draft.info.gv); LS.set(K.draft, draft); fillForm(); renderGroups(); $('#linkOut').innerHTML = ''; };
   $('#btnPreview').onclick = async () => {
     if (!banks.length) return toast('Chưa có ngân hàng câu hỏi', 'bad');
     const exam = buildExam(); exam.id = exam.id || 'XEMTHU';
@@ -302,11 +391,15 @@
     const exam = buildExam();
     if (!QuizCore.buildPaper(exam, 'x').items.length) return toast('Đề chưa có câu nào', 'bad');
     const wErr = winSummary(); if (wErr) return toast(wErr, 'bad');
+    if (EN) {
+      const miss = []; draft.groups.forEach(g => { const b = banks.find(x => x.id === g.bankId); if (b) audioNeeds(b).forEach((_, k) => { if (!hasAud(b, k) && !miss.includes(k)) miss.push(k); }); });
+      if (miss.length && !confirm('Còn ' + miss.length + ' file nghe chưa tải lên (' + miss.slice(0, 5).join(', ') + (miss.length > 5 ? '…' : '') + '). Học sinh sẽ không nghe được các câu đó. Vẫn lưu đề?')) return;
+    }
     if (exam.settings.endAtTs && exam.settings.endAtTs < Date.now() && !confirm('Giờ kết thúc đã qua — học sinh sẽ không vào làm được. Vẫn lưu?')) return;
     $('#saveState').textContent = 'Đang lưu…'; $('#btnSave').disabled = true;
     try {
       const r = await api(conf().api, { action: 'saveExam', key: conf().key, exam });
-      draft.id = r.examId; LS.set('draft', draft); fillForm();
+      draft.id = r.examId; LS.set(K.draft, draft); fillForm();
       $('#saveState').textContent = 'Đã lưu lúc ' + fmtTime(Date.now());
       $('#linkOut').innerHTML = linkHtml(r.examId); bindCopy();
       toast('Đã lưu đề ' + r.examId, 'ok');
@@ -337,12 +430,17 @@
   async function editExam(id) {
     try {
       const ex = (await api(conf().api, { action: 'getExam', key: conf().key, examId: id })).exam;
+      if ((ex.kind === 'en') !== EN) {
+        toast(ex.kind === 'en' ? 'Đây là đề Tiếng Anh — mở ở trang “Đề Tiếng Anh” để sửa' : 'Đây là đề môn học / mô đun — mở ở trang giáo viên chính để sửa', 'bad');
+        setTimeout(() => { if (confirm('Mở trang ' + (ex.kind === 'en' ? 'Đề Tiếng Anh' : 'Môn học / Mô đun') + ' ngay?')) location.href = ex.kind === 'en' ? 'tienganh.html' : 'giaovien.html'; }, 300);
+        return;
+      }
       // nạp lại ngân hàng của đề vào máy nếu chưa có
       const ids = ex.banks.map(eb => {
         let b = banks.find(x => x.name === eb.name && x.questions.length === eb.questions.length);
         if (!b) {
           b = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: eb.name, file: '(tải từ đề ' + id + ')', addedAt: Date.now(),
-            questions: eb.questions.map((q, i) => Object.assign({ n: i + 1, text: '' }, q, { disabled: false })) };
+            questions: eb.questions.map((q, i) => Object.assign({ n: i + 1, text: '' }, q, { disabled: false })), groups: eb.groups || [], audio: eb.audio || {} };
           banks.push(b);
         }
         return b.id;
@@ -351,9 +449,9 @@
       const info = Object.assign({}, ex.info);
       const opts = $$('#i_loai option').map(o => o.value);
       if (info.loai && !opts.includes(info.loai)) { info.loaiKhac = info.loai; info.loai = '__other'; }
-      draft = { id: ex.id, info, groups: ex.groups.map(g => ({ bankId: ids[g.bank], pick: g.pick, count: g.count || '', range: g.range || '', list: g.list || '', sec: g.sec == null ? '' : g.sec, pts: g.pts == null ? '' : g.pts, shuffleOpts: g.shuffleOpts !== false })), settings: ex.settings || {} };
+      draft = { id: ex.id, info, groups: ex.groups.map(g => ({ bankId: ids[g.bank], pick: g.pick, count: g.count || '', range: g.range || '', list: g.list || '', sec: g.sec == null ? '' : g.sec, pts: g.pts == null ? '' : g.pts, shuffleOpts: g.shuffleOpts !== false, skill: g.skill || 'all' })), settings: ex.settings || {} };
       draft.info.title = ex.title;
-      LS.set('draft', draft); fillForm(); showTab('build');
+      LS.set(K.draft, draft); fillForm(); showTab('build');
       $('#linkOut').innerHTML = linkHtml(ex.id); bindCopy();
       toast('Đang sửa đề ' + ex.id + ' — sửa xong bấm “Lưu đề lên máy chủ”', 'ok');
     } catch (e) { toast(e.message, 'bad'); }
@@ -416,9 +514,13 @@
     const ip = curData.inProgress || [];
     $('#progressBox').innerHTML = ip.length ? '<div class="msg info" style="margin-top:12px"><b>Đang làm bài:</b> ' + ip.map(a => esc(a.hoTen) + ' (' + esc(a.lop) + ')' + (multi && a.lan ? ' lần ' + a.lan : '') + ' – câu ' + ((+a.idx || 0) + 1) + (a.violations ? ' <span class="pill bad">vi phạm ' + a.violations + '</span>' : '')).join(' · ') + '</div>' : '';
     const hasEssay = res.some(r => r['Tự luận']);
-    $('#resTbl').innerHTML = '<tr><th class="num">STT</th><th>Họ và tên</th><th>Lớp</th><th>MSSV</th><th class="num">Điểm</th>' + (multi ? '<th class="num">Lần</th>' : '') + '<th class="num">Đúng</th>' + (hasEssay ? '<th>Tự luận</th>' : '') + '<th>Thời gian làm</th><th class="num">Vi phạm</th><th>Nộp lúc</th><th>Ghi chú</th><th></th></tr>' +
+    const skOf = (r) => { try { return JSON.parse(r['Kỹ năng'] || 'null') || null; } catch (e) { return null; } };
+    const skCols = ['L', 'R', 'W', 'S'].filter(k => res.some(r => { const x = skOf(r); return x && x.s && x.s[k]; }));
+    const hasToeic = res.some(r => { const x = skOf(r); return x && x.t && x.t.LR != null; });
+    const skCell = (r) => { const x = skOf(r) || {}; return skCols.map(k => { const o = x.s && x.s[k]; return '<td class="num">' + (o ? (o.pending ? '<span class="pill warn" title="Chưa chấm ' + o.pending + ' câu">' + o.score + '*</span>' : o.score) : '—') + '</td>'; }).join('') + (hasToeic ? '<td class="num">' + (x.t && x.t.LR != null ? x.t.LR : '—') + '</td>' : ''); };
+    $('#resTbl').innerHTML = '<tr><th class="num">STT</th><th>Họ và tên</th><th>Lớp</th><th>MSSV</th><th class="num">Điểm</th>' + (multi ? '<th class="num">Lần</th>' : '') + skCols.map(k => '<th class="num">' + SKN[k] + '</th>').join('') + (hasToeic ? '<th class="num" title="Quy đổi TOEIC tham khảo (Nghe + Đọc)">TOEIC</th>' : '') + '<th class="num">Đúng</th>' + (hasEssay ? '<th>Tự luận / Nói</th>' : '') + '<th>Thời gian làm</th><th class="num">Vi phạm</th><th>Nộp lúc</th><th>Ghi chú</th><th></th></tr>' +
       (res.length ? res.map((r, i) => '<tr' + (multi && !chosenIds.has(r['Mã lượt']) ? ' class="muted"' : '') + '><td class="num">' + (i + 1) + '</td><td><b>' + esc(r['Họ và tên']) + '</b></td><td>' + esc(r['Lớp']) + '</td><td>' + esc(r['MSSV']) + '</td>' +
-        '<td class="num"><b>' + esc(r['Điểm']) + '</b>' + (multi && chosenIds.has(r['Mã lượt']) ? ' <span class="pill ok" title="Điểm được ghi nhận">' + (exSt.scorePolicy === 'avg' ? 'TB ' + agg.find(a => a.row === r).score : '✓') + '</span>' : '') + '</td>' + (multi ? '<td class="num">' + esc(r['Lần'] || '') + '</td>' : '') + '<td class="num">' + esc(r['Số câu đúng']) + '/' + esc(r['Số câu TN']) + '</td>' +
+        '<td class="num"><b>' + esc(r['Điểm']) + '</b>' + (multi && chosenIds.has(r['Mã lượt']) ? ' <span class="pill ok" title="Điểm được ghi nhận">' + (exSt.scorePolicy === 'avg' ? 'TB ' + agg.find(a => a.row === r).score : '✓') + '</span>' : '') + '</td>' + (multi ? '<td class="num">' + esc(r['Lần'] || '') + '</td>' : '') + skCell(r) + '<td class="num">' + esc(r['Số câu đúng']) + '/' + esc(r['Số câu TN']) + '</td>' +
         (hasEssay ? '<td>' + (r['Tự luận'] ? '<span class="pill ' + (/Chưa/.test(r['Tự luận']) ? 'warn' : 'ok') + '">' + esc(r['Tự luận']) + '</span>' : '') + '</td>' : '') +
         '<td>' + fmtDur(r['Thời gian làm (giây)']) + '</td><td class="num">' + (+r['Vi phạm'] ? '<span class="pill bad">' + r['Vi phạm'] + '</span>' : '0') + '</td><td>' + fmtTime(r['Nộp bài']) + '</td><td>' + esc(r['Ghi chú']) + '</td>' +
         '<td class="row" style="flex-wrap:nowrap"><button class="btn sm" data-see="' + esc(r['Mã lượt']) + '">' + (r['Tự luận'] ? 'Chấm / xem' : 'Xem bài') + '</button><button class="btn sm danger" data-redo="' + esc(r['Mã lượt']) + '" title="Xóa bài này để học sinh làm lại">Cho làm lại</button></td></tr>').join('')
@@ -436,8 +538,12 @@
     let det; try { det = JSON.parse(r['Chi tiết']); } catch (e) { return toast('Không đọc được chi tiết bài làm', 'bad'); }
     let scores = {}; try { scores = JSON.parse(r['Điểm TL'] || '{}'); } catch (e) { scores = {}; }
     const paper = QuizCore.buildPaper(curExam, det.seed);
+    let lastGrp = null;
     const html = paper.items.map((it, i) => {
-      const q = curExam.banks[it.b].questions[it.q], d = det.d[i] || [];
+      const bk = curExam.banks[it.b], q = bk.questions[it.q], d = det.d[i] || [];
+      let gHead = '';
+      if (it.grp && it.grp !== lastGrp) { const gr = (bk.groups || [])[q.g] || {}; gHead = '<div class="gprev"><b>' + esc(gr.title || 'Đoạn dùng chung') + '</b>' + (gr.audio ? ' <span class="pill">🎧 ' + esc(gr.audio) + '</span>' : '') + (gr.stem ? '<div class="gstem">' + gr.stem + '</div>' : '') + '</div>'; }
+      lastGrp = it.grp || null;
       let body;
       if (q.type === 'mc') {
         const chosen = d[2] || [];
@@ -445,17 +551,33 @@
       } else if (q.type === 'fill') {
         const given = d[2] || [], oks = d[3] || [];
         body = '<div>' + q.stem.replace(/<span class="blank" data-b="(\d+)">[^<]*<\/span>/g, (m, k) => { k = +k; return '<span class="fillans ' + (oks[k] ? 'ok' : 'bad') + '">' + (esc(given[k] || '') || '(trống)') + '</span>' + (oks[k] ? '' : ' <span class="fillans ok">→ ' + esc(q.blanks[k].join(q.blanks[k].some(x => x.indexOf('/') >= 0) ? ' | ' : ' / ')) + '</span>'); }) + '</div>';
+      } else if (q.type === 'speak') {
+        const rec = d[2] && d[2].rec;
+        body = (q.answer ? '<div class="hint"><b>Tiêu chí chấm:</b> ' + q.answer + '</div>' : '') +
+          (rec ? '<div class="row" style="margin:6px 0"><button class="btn sm primary" data-play="' + esc(rec) + '">▶ Nghe bài nói' + (d[2].dur ? ' (' + Math.round(d[2].dur) + ' giây)' : '') + '</button><span class="hint" data-pst="' + esc(rec) + '"></span><a class="hint" target="_blank" rel="noopener" href="https://drive.google.com/file/d/' + esc(rec) + '/view">Mở trong Google Drive</a></div>' : '<div class="pill warn">Không có bản ghi âm</div>') +
+          '<div class="row"><label style="margin:0">Điểm câu này (tối đa ' + it.pts + '):</label><input type="number" class="mini" min="0" max="' + it.pts + '" step="0.25" data-es="' + i + '" value="' + (scores[i] != null ? scores[i] : '') + '"></div>';
       } else {
         body = (q.answer ? '<div class="hint"><b>Đáp án gợi ý:</b> ' + q.answer + '</div>' : '') +
-          '<div class="msg info" style="white-space:pre-wrap">' + (esc(d[2] || '') || '<i>(bỏ trống)</i>') + '</div>' +
+          '<div class="msg info" style="white-space:pre-wrap">' + (esc(d[2] || '') || '<i>(bỏ trống)</i>') + '</div>' + (EN && d[2] ? '<div class="hint">' + String(d[2]).trim().split(/\s+/).filter(Boolean).length + ' từ</div>' : '') +
           '<div class="row"><label style="margin:0">Điểm câu này (tối đa ' + it.pts + '):</label><input type="number" class="mini" min="0" max="' + it.pts + '" step="0.25" data-es="' + i + '" value="' + (scores[i] != null ? scores[i] : '') + '"></div>';
       }
-      return '<div class="qprev"><div class="head"><b>Câu ' + (i + 1) + '</b><span class="pill">' + it.pts + ' điểm</span>' + (q.type === 'mc' ? '<span class="pill ' + (d[3] ? 'ok' : 'bad') + '">' + (d[3] ? 'Đúng' : 'Sai') + '</span>' : q.type === 'fill' ? '<span class="pill ' + ((d[3] || []).every(Boolean) ? 'ok' : 'bad') + '">Điền khuyết: đúng ' + (d[3] || []).filter(Boolean).length + '/' + q.blanks.length + '</span>' : '<span class="pill">Tự luận</span>') + '</div>' + (q.type === 'fill' ? '' : '<div>' + q.stem + '</div>') + body + '</div>';
+      return gHead + '<div class="qprev' + (it.grp ? ' ing' : '') + '"><div class="head"><b>Câu ' + (i + 1) + '</b>' + (q.skill ? '<span class="pill">' + SKN[q.skill] + '</span>' : '') + '<span class="pill">' + it.pts + ' điểm</span>' + (q.type === 'speak' ? '<span class="pill">Nói (ghi âm)</span>' : q.type === 'mc' ? '<span class="pill ' + (d[3] ? 'ok' : 'bad') + '">' + (d[3] ? 'Đúng' : 'Sai') + '</span>' : q.type === 'fill' ? '<span class="pill ' + ((d[3] || []).every(Boolean) ? 'ok' : 'bad') + '">Điền khuyết: đúng ' + (d[3] || []).filter(Boolean).length + '/' + q.blanks.length + '</span>' : '<span class="pill">Tự luận</span>') + '</div>' + (q.type === 'fill' ? '' : '<div>' + q.stem + '</div>') + body + '</div>';
     }).join('');
-    const hasEs = paper.items.some(it => curExam.banks[it.b].questions[it.q].type === 'essay');
+    const hasEs = paper.items.some(it => ['essay', 'speak'].includes(curExam.banks[it.b].questions[it.q].type));
     modal('<div class="row"><div><h2 style="margin:0">' + esc(r['Họ và tên']) + ' — ' + esc(r['Lớp']) + '</h2><div class="muted">Điểm: <b>' + esc(r['Điểm']) + '</b> · Đúng ' + r['Số câu đúng'] + '/' + r['Số câu TN'] + ' câu tự chấm (trắc nghiệm, điền khuyết)</div></div><span class="spacer"></span>' +
-      (hasEs ? '<button class="btn primary" id="mSaveEs">Lưu điểm tự luận</button>' : '') + '<button class="btn" id="mClose">Đóng</button></div>' + html);
-    $('#mClose').onclick = closeModal;
+      (hasEs ? '<button class="btn primary" id="mSaveEs">Lưu điểm ' + (EN ? 'Viết / Nói' : 'tự luận') + '</button>' : '') + '<button class="btn" id="mClose">Đóng</button></div>' + html);
+    $('#mClose').onclick = () => { $$('#modalBody audio').forEach(a => a.pause()); closeModal(); };
+    $$('[data-play]').forEach(btn => btn.onclick = async () => {
+      const id = btn.dataset.play, st = document.querySelector('[data-pst="' + id + '"]');
+      btn.disabled = true; st.textContent = 'Đang tải bản ghi âm…';
+      try {
+        let parts = 1, chunks = [], mime = 'audio/webm';
+        for (let k = 0; k < parts; k++) { const r = await api(conf().api, { action: 'speech', key: conf().key, id, part: k }); parts = r.parts; mime = r.mime || mime; chunks.push(Uint8Array.from(atob(r.b64), c => c.charCodeAt(0))); }
+        const url = URL.createObjectURL(new Blob(chunks, { type: mime }));
+        const au = document.createElement('audio'); au.controls = true; au.src = url; au.style.cssText = 'width:100%;margin-top:4px';
+        btn.parentNode.after(au); btn.remove(); st.textContent = ''; au.play().catch(() => {});
+      } catch (e) { btn.disabled = false; st.textContent = e.message; }
+    });
     if (hasEs) $('#mSaveEs').onclick = async () => {
       const sc = {}; $$('[data-es]').forEach(inp => { if (inp.value.trim() !== '') sc[inp.dataset.es] = +inp.value; });
       try { const x = await api(conf().api, { action: 'gradeEssay', key: conf().key, attemptId: aid, scores: sc }); toast('Đã lưu — điểm mới: ' + x.score, 'ok'); closeModal(); refreshResults(); } catch (e) { toast(e.message, 'bad'); }
@@ -476,7 +598,12 @@
     const H = (v) => ({ v, s: 1 }), C = (v) => ({ v, s: 2 }), N1 = (v) => ({ v: v === '' || v == null ? '' : +v, s: 3 }), N = (v) => ({ v: v === '' || v == null ? '' : +v, s: 4 });
     const agg = aggregate(res);
     const rows1 = [[H('STT'), H('Họ và tên'), H('Lớp'), H('MSSV'), H('Điểm'), H('Số câu đúng'), H('Số câu TN'), H('Điểm TL đạt'), H('Tự luận'), H('Thời gian làm'), H('Vi phạm'), H('Nộp bài'), H('Ghi chú'), H('Mã đề'), H('Số lần làm')]];
-    agg.forEach((a, i) => { const r = a.row; rows1.push([N(i + 1), C(r['Họ và tên']), C(r['Lớp']), C(r['MSSV']), N1(a.score), N(r['Số câu đúng']), N(r['Số câu TN']), N1(r['Điểm TL đạt']), C(r['Tự luận']), C(fmtDur(r['Thời gian làm (giây)'])), N(r['Vi phạm']), C(fmtTime(r['Nộp bài'])), C(r['Ghi chú']), C(r['Mã đề']), N(a.count)]); });
+    const skOfX = (r) => { try { return JSON.parse(r['Kỹ năng'] || 'null') || {}; } catch (e) { return {}; } };
+    const xCols = ['L', 'R', 'W', 'S'].filter(k => res.some(r => { const x = skOfX(r); return x.s && x.s[k]; }));
+    const xToeic = res.some(r => { const x = skOfX(r); return x.t && x.t.LR != null; });
+    xCols.forEach(k => rows1[0].push(H(SKN[k] + ' (thang 10)')));
+    if (xToeic) ['TOEIC Nghe', 'TOEIC Đọc', 'TOEIC Nghe+Đọc'].forEach(h => rows1[0].push(H(h)));
+    agg.forEach((a, i) => { const r = a.row, x = skOfX(r); rows1.push([N(i + 1), C(r['Họ và tên']), C(r['Lớp']), C(r['MSSV']), N1(a.score), N(r['Số câu đúng']), N(r['Số câu TN']), N1(r['Điểm TL đạt']), C(r['Tự luận']), C(fmtDur(r['Thời gian làm (giây)'])), N(r['Vi phạm']), C(fmtTime(r['Nộp bài'])), C(r['Ghi chú']), C(r['Mã đề']), N(a.count)].concat(xCols.map(k => N1(x.s && x.s[k] ? x.s[k].score : ''))).concat(xToeic ? [N(x.t ? x.t.L : ''), N(x.t ? x.t.R : ''), N(x.t ? x.t.LR : '')] : [])); });
     const rowsAll = [[H('STT'), H('Họ và tên'), H('Lớp'), H('MSSV'), H('Lần'), H('Điểm'), H('Số câu đúng'), H('Số câu TN'), H('Thời gian làm'), H('Vi phạm'), H('Nộp bài'), H('Ghi chú')]];
     res.slice().sort((a, b) => sortVN(a, b) || (+a['Nộp bài'] || 0) - (+b['Nộp bài'] || 0)).forEach((r, i) => rowsAll.push([N(i + 1), C(r['Họ và tên']), C(r['Lớp']), C(r['MSSV']), N(r['Lần'] || 1), N1(r['Điểm']), N(r['Số câu đúng']), N(r['Số câu TN']), C(fmtDur(r['Thời gian làm (giây)'])), N(r['Vi phạm']), C(fmtTime(r['Nộp bài'])), C(r['Ghi chú'])]));
     const rows2 = [[{ v: 'THÔNG TIN BÀI KIỂM TRA / BÀI THI', s: 5 }], [],
@@ -493,7 +620,8 @@
       const paper = QuizCore.buildPaper(curExam, det.seed);
       paper.items.forEach((it, i) => {
         const q = curExam.banks[it.b].questions[it.q], d = det.d[i] || [];
-        if (q.type === 'fill') rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('ĐK'), C(strip(q.stem).slice(0, 300)), C((d[2] || []).map((x, k) => '(' + (k + 1) + ') ' + (x || '—')).join('; ')), C(q.blanks.map((a, k) => '(' + (k + 1) + ') ' + a.join(a.some(x => x.indexOf('/') >= 0) ? ' | ' : '/')).join('; ')), C((d[3] || []).filter(Boolean).length + '/' + q.blanks.length + ' đúng')]);
+        if (q.type === 'speak') rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('Nói'), C(strip(q.stem).slice(0, 300)), C(d[2] && d[2].rec ? 'https://drive.google.com/file/d/' + d[2].rec + '/view' : '(không ghi âm)'), C(strip(q.answer).slice(0, 300)), C('')]);
+        else if (q.type === 'fill') rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('ĐK'), C(strip(q.stem).slice(0, 300)), C((d[2] || []).map((x, k) => '(' + (k + 1) + ') ' + (x || '—')).join('; ')), C(q.blanks.map((a, k) => '(' + (k + 1) + ') ' + a.join(a.some(x => x.indexOf('/') >= 0) ? ' | ' : '/')).join('; ')), C((d[3] || []).filter(Boolean).length + '/' + q.blanks.length + ' đúng')]);
         else if (q.type === 'mc') rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('TN'), C(strip(q.stem).slice(0, 300)), C((d[2] || []).map(x => L[x]).join(', ') || '(bỏ trống)'), C(q.correct.map(x => L[x]).join(', ')), C(d[3] ? 'Đúng' : 'Sai')]);
         else rows3.push([C(r['Họ và tên']), C(r['Lớp']), N(r['Lần'] || 1), N(i + 1), C('TL'), C(strip(q.stem).slice(0, 300)), C(String(d[2] || '').slice(0, 3000)), C(strip(q.answer).slice(0, 500)), C('')]);
       });
@@ -516,7 +644,7 @@
       const j = JSON.parse(await f.text());
       if (!j.banks) throw new Error('File không đúng định dạng sao lưu');
       j.banks.forEach(b => { if (!banks.some(x => x.id === b.id)) banks.push(b); });
-      if (j.draft && confirm('Nạp cả cấu hình đề trong file sao lưu?')) { draft = j.draft; LS.set('draft', draft); fillForm(); }
+      if (j.draft && confirm('Nạp cả cấu hình đề trong file sao lưu?')) { draft = j.draft; LS.set(K.draft, draft); fillForm(); }
       await saveBanks(); toast('Đã nhập ' + j.banks.length + ' ngân hàng', 'ok');
     } catch (err) { toast(err.message, 'bad'); }
     e.target.value = '';
@@ -524,5 +652,5 @@
 
   /* ------------------------------- khởi động ------------------------------- */
   fillForm();
-  loadBanks().then(() => { const t = LS.get('tab', 'banks'); showTab(conf().api ? t : (t === 'results' ? 'setup' : t)); });
+  loadBanks().then(() => { const t = LS.get(K.tab, 'banks'); showTab(conf().api ? t : (t === 'results' ? 'setup' : t)); });
 })();

@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đề Tiếng Anh — Trộn đề thi Online</title>
+<meta name="description" content="Phần mềm trộn đề trắc nghiệm & tự luận online — Lê Duy Nam, GV Trường Cao đẳng Dầu khí">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="img/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  .grp { display: grid; grid-template-columns: 1.6fr 1fr .8fr 1fr .8fr .7fr auto auto; gap: 8px; align-items: end; padding: 10px; border: 1px solid var(--line); border-radius: 11px; margin-bottom: 8px; background: var(--soft); }
+  .grp label { font-size: .76rem; }
+  .grp.en { grid-template-columns: 1.5fr .9fr 1fr .8fr 1fr .8fr .7fr auto auto; }
+  @media (max-width: 900px) { .grp, .grp.en { grid-template-columns: 1fr 1fr; } }
+  .bank { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; }
+  .bank .nm { flex: 1 1 260px; min-width: 0; }
+  .bank .nm input { font-weight: 600; }
+  .qprev .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+  .qprev .opt { cursor: pointer; border-radius: 6px; }
+  .qprev .opt:hover { background: var(--soft); }
+  .qprev.off { opacity: .5; }
+  .qprev.bad { border-color: var(--bad); }
+  .mini { width: 78px !important; padding: 4px 7px !important; font-size: .82rem; }
+  .sumbar { display: flex; gap: 14px; flex-wrap: wrap; font-size: .9rem; color: var(--ink-2); }
+  .sumbar b { color: var(--ink); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="logo">Q</span><span>Trộn đề thi Online<small>Đề Tiếng Anh · Nghe – Đọc – Viết – Nói</small></span></a>
+    <span class="spacer"></span>
+    <nav class="tabs" id="tabs">
+      <button class="tab on" data-tab="banks">1. Ngân hàng câu hỏi</button>
+      <button class="tab" data-tab="build">2. Tạo đề &amp; link</button>
+      <button class="tab" data-tab="results">3. Kết quả</button>
+      <button class="tab" data-tab="setup">Cài đặt máy chủ</button>
+      <a class="tab swmode" href="giaovien.html">← Môn học / Mô đun</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ================= NGÂN HÀNG ================= -->
+  <section class="section on" id="sec-banks">
+    <div class="card">
+      <h2>Nạp file đề Tiếng Anh (.docx)</h2>
+      <p class="muted" style="margin-top:0">Đề chia 4 kỹ năng bằng dòng tiêu đề <b>PHẦN … NGHE (LISTENING)</b>, <b>ĐỌC (READING)</b>, <b>VIẾT (WRITING)</b>, <b>NÓI (SPEAKING)</b> (có thể thêm Part 1…Part 7). File nghe ghi <code>[AUDIO: tên-file.mp3]</code>; đoạn dùng chung cho nhiều câu bắt đầu bằng <b>“Hội thoại 1:”</b>, <b>“Đoạn văn 1:”</b>, <b>“Passage 1:”</b>… Câu NÓI: học sinh ghi âm bằng micro, ghi thời gian sau số câu, vd <i>Câu 12 (2 điểm, 60 giây):</i></p>
+      <div class="msg info row" style="justify-content:space-between"><span>Tải <b>file Word mẫu đề Tiếng Anh</b> (có sẵn ví dụ Nghe Part 1–3, Đọc Part 5–7, Viết, Nói) rồi soạn theo.</span><a class="btn sm primary" href="mau/Mau_de_Tieng_Anh_Tron_de_thi.docx" download>Tải mẫu đề Tiếng Anh (.docx)</a></div>
+      <label class="drop" id="drop" for="fileIn">
+        <b>Kéo thả file .docx vào đây</b> hoặc bấm để chọn file
+        <div class="hint">Mỗi file = 1 ngân hàng câu hỏi. Công thức MathType trong đề được hiển thị tự động.</div>
+      </label>
+      <input type="file" id="fileIn" accept=".docx" multiple class="hide">
+      <div id="parseMsg"></div>
+    </div>
+    <div class="card">
+      <div class="row"><h2 style="margin:0">Ngân hàng đã nạp</h2><span class="spacer"></span><span class="muted" id="bankTotal"></span></div>
+      <p class="hint">Ngân hàng được lưu ngay trên máy tính này (trình duyệt), lần sau mở lại vẫn còn.</p>
+      <div id="bankList"></div>
+    </div>
+  </section>
+
+  <!-- ================= TẠO ĐỀ ================= -->
+  <section class="section" id="sec-build">
+    <div class="card">
+      <div class="row"><h2 style="margin:0">Thông tin bài kiểm tra / bài thi</h2><span class="spacer"></span><span class="pill" id="editingPill"></span></div>
+      <div class="grid g3" style="margin-top:12px">
+        <div><label>Loại bài</label>
+          <select id="i_loai">
+            <option>Kiểm tra Tiếng Anh</option>
+            <option>Kiểm tra thường xuyên</option>
+            <option>Kiểm tra định kỳ</option>
+            <option>Thi thử TOEIC</option>
+            <option>Thi TOEIC nội bộ (Listening &amp; Reading)</option>
+            <option>Thi kết thúc môn Tiếng Anh</option>
+            <option>Thi Tiếng Anh chuyên ngành</option>
+            <option>Luyện nghe / luyện đọc</option>
+            <option>Ôn tập</option>
+            <option value="__other">Khác (tự nhập)…</option>
+          </select>
+          <input type="text" id="i_loaiKhac" class="hide" placeholder="Nhập loại bài" style="margin-top:6px">
+        </div>
+        <div><label>Môn học / Mô đun</label>
+          <select id="i_hinhThuc"><option>Môn học</option><option>Mô đun</option></select>
+        </div>
+        <div><label>Tên môn học / mô đun</label><input type="text" id="i_mon" placeholder="VD: Tiếng Anh / Tiếng Anh chuyên ngành"></div>
+        <div><label>Nội dung / phần kiểm tra</label><input type="text" id="i_noiDung" placeholder="VD: Unit 3 – Safety at work / TOEIC Test 1"></div>
+        <div><label>Lớp</label><input type="text" id="i_lop" placeholder="VD: CK1-24-N2"></div>
+        <div><label>Khóa</label><input type="text" id="i_khoa" placeholder="VD: 2024-2027"></div>
+        <div><label>Lần thi</label><select id="i_lan"><option value="">—</option><option>Lần 1</option><option>Lần 2</option></select></div>
+        <div><label>Ngày</label><input type="text" id="i_ngay" placeholder="dd/mm/yyyy"></div>
+        <div><label>Giáo viên</label><input type="text" id="i_gv" placeholder="Họ tên giáo viên"></div>
+      </div>
+      <div style="margin-top:12px"><label>Tiêu đề hiển thị cho học sinh</label><input type="text" id="i_title"><div class="hint">Để trống sẽ tự ghép: Loại bài – Môn/Mô đun – Nội dung.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="row"><h2 style="margin:0">Nhóm câu hỏi</h2><span class="spacer"></span><button class="btn sm" id="addGroup">+ Thêm nhóm</button></div>
+      <p class="hint">Mỗi nhóm chọn <b>1 kỹ năng</b> (Nghe / Đọc / Viết / Nói) của một ngân hàng — thứ tự các nhóm là thứ tự các phần trong bài. Các câu cùng một đoạn văn / đoạn hội thoại luôn đi cùng nhau. “Số câu” để trống = lấy tất cả; ghi số để lấy ngẫu nhiên (các đoạn được lấy trọn vẹn).</p>
+      <div id="groups"></div>
+      <div class="sumbar" id="groupSum"></div>
+    </div>
+
+    <div class="card">
+      <div class="row"><h2 style="margin:0">Thời gian &amp; số lần làm bài</h2><span class="spacer"></span>
+        <button class="btn sm" id="presetTest" type="button">Mẫu: Kiểm tra / thi (1 lần)</button>
+        <button class="btn sm" id="presetEasy" type="button">Mẫu: Bài dễ / gỡ điểm</button>
+        <button class="btn sm" id="presetPractice" type="button">Mẫu: Ôn tập (không giới hạn)</button></div>
+      <div class="grid g3" style="margin-top:12px">
+        <div><label>Bắt đầu cho vào làm từ</label><input type="datetime-local" id="s_from"><div class="hint">Trước giờ này học sinh mở link chỉ thấy đồng hồ chờ. Để trống = vào được ngay.</div></div>
+        <div><label>Hết giờ vào làm lúc</label><input type="datetime-local" id="s_to"><div class="hint">Sau giờ này <b>không cho vào làm nữa</b> (em đang làm dở vẫn làm tiếp).</div></div>
+        <div><label>Kết thúc bài lúc</label><input type="datetime-local" id="s_end"><div class="hint">Đến giờ này mọi bài đang làm <b>tự động nộp</b>.</div></div>
+        <div><label>Số lần được làm bài</label>
+          <div class="row" style="flex-wrap:nowrap"><input type="number" id="s_maxA" min="1" value="1" style="max-width:110px"><label class="check"><input type="checkbox" id="s_unlim"> Không giới hạn (luyện tập)</label></div>
+          <div class="hint">Mỗi lần làm là một đề trộn mới.</div></div>
+        <div><label>Điểm ghi nhận khi làm nhiều lần</label>
+          <select id="s_policy"><option value="max">Lần cao nhất</option><option value="last">Lần cuối cùng</option><option value="first">Lần đầu tiên</option><option value="avg">Trung bình các lần</option></select>
+          <div class="hint">Dùng cho bảng kết quả và file Excel xuất ra.</div></div>
+        <div id="winSummary" class="msg info" style="margin:0;align-self:start"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Cài đặt làm bài</h2>
+      <div class="msg info enbox">
+        <div class="grid g3">
+          <div><label>Số lần được nghe mỗi đoạn / câu nghe</label>
+            <select id="s_plays"><option value="1">1 lần (như thi TOEIC)</option><option value="2">2 lần</option><option value="3">3 lần</option><option value="0">Không giới hạn (luyện nghe)</option></select>
+            <div class="hint">Học sinh không tua được; file tự phát khi tới câu nghe.</div></div>
+          <div style="display:flex;flex-direction:column;justify-content:center;gap:6px">
+            <label class="check"><input type="checkbox" id="s_toeic"> Hiện điểm quy đổi TOEIC (tham khảo)</label>
+            <div class="hint">Nghe 5–495, Đọc 5–495 (quy đổi tuyến tính theo tỉ lệ đúng), Viết / Nói 0–200. Điểm thang 10 vẫn giữ để nhập KQHT.</div></div>
+          <div class="hint" style="align-self:center">Bài có phần <b>Nói</b>: học sinh cần micro (điện thoại / laptop có sẵn) và bấm <b>Cho phép</b> khi trình duyệt hỏi quyền micro. Bản ghi âm lưu trong Google Drive của thầy/cô (thư mục TronDeThi_GhiAm).</div>
+        </div>
+      </div>
+      <div class="grid g3" style="margin-bottom:14px">
+        <div><label>Cách làm bài</label>
+          <select id="s_nav">
+            <option value="strict">Từng câu — đếm ngược mỗi câu, KHÔNG quay lại (kiểm tra / thi)</option>
+            <option value="free">Tự do — được quay lại xem, sửa các câu trước</option>
+          </select>
+          <div class="hint" id="navHintT">Mỗi câu có đồng hồ riêng, hết giờ tự chuyển câu.</div></div>
+        <div class="freeOnly"><label>Thời gian (chế độ Tự do)</label>
+          <select id="s_ftime"><option value="none">Không giới hạn thời gian (ôn tập)</option><option value="total">Giới hạn tổng thời gian cả bài</option></select></div>
+        <div class="freeOnly totalOnly"><label>Tổng thời gian (phút)</label><input type="number" id="s_tmin" min="1" placeholder="tự tính theo số giây mỗi câu"><div class="hint">Để trống = cộng thời gian của từng câu.</div></div>
+      </div>
+      <div class="grid g4">
+        <div><label>Thời gian mặc định mỗi câu (giây)</label><input type="number" id="s_sec" value="60" min="0"><div class="hint">0 = không giới hạn. Có thể đặt riêng theo nhóm hoặc từng câu.</div></div>
+        <div><label>Thứ tự câu hỏi</label><select id="s_order"><option value="mix">Trộn lẫn tất cả các nhóm</option><option value="group">Trộn trong từng nhóm</option><option value="keep">Giữ nguyên thứ tự</option></select></div>
+        <div><label>Thang điểm</label><input type="number" id="s_scale" value="10" min="1"></div>
+        <div><label>Làm tròn điểm</label><select id="s_round"><option value="0.1">0,1</option><option value="0.25">0,25</option><option value="0.5">0,5</option><option value="1">1</option><option value="0.01">0,01</option></select></div>
+        <div><label>Tự nộp bài khi vi phạm (lần)</label><input type="number" id="s_maxV" value="3" min="0"><div class="hint">Rời màn hình / chụp màn hình. 0 = chỉ ghi nhận.</div></div>
+        <div style="display:flex;flex-direction:column;gap:7px;justify-content:center">
+          <label class="check"><input type="checkbox" id="s_shuffleOpts" checked> Trộn thứ tự phương án A/B/C/D</label>
+          <label class="check"><input type="checkbox" id="s_same"> Mọi học sinh cùng 1 đề</label>
+        </div>
+      </div>
+      <div class="grid g4" style="margin-top:10px">
+        <label class="check"><input type="checkbox" id="s_showScore" checked> Cho học sinh xem điểm sau khi nộp</label>
+        <label class="check"><input type="checkbox" id="s_full" checked> Yêu cầu làm bài toàn màn hình</label>
+        <label class="check"><input type="checkbox" id="s_mssv"> Bắt buộc nhập Mã số HSSV</label>
+        <label class="check"><input type="checkbox" id="s_review"> Cho xem đáp án sau khi nộp</label>
+      </div>
+      <div class="msg info" style="margin-top:12px">
+        <label class="check" style="font-weight:600"><input type="checkbox" id="s_requireApp"> Bắt buộc làm bằng phần mềm Trộn đề thi Online trên máy tính (Windows / Mac)</label>
+        <div class="hint">Dùng cho thi ở phòng máy của Trường đã cài phần mềm (chặn chụp màn hình thật). Bật ô này thì học sinh mở link bằng điện thoại / trình duyệt sẽ <b>không vào làm được</b>. Để trống khi học sinh làm trên điện thoại.</div>
+      </div>
+      <div class="grid g2" style="margin-top:12px">
+        <div><label>Danh sách lớp (không bắt buộc)</label><textarea id="s_roster" placeholder="Mỗi dòng 1 học sinh — dán cột Họ và tên từ Excel. Có danh sách thì chỉ những em trong danh sách mới vào làm được."></textarea></div>
+        <div><label>Lời dặn cho học sinh (không bắt buộc)</label><textarea id="s_note" placeholder="VD: Không được sử dụng tài liệu."></textarea></div>
+      </div>
+      <div class="musicbox">
+        <label>Nhạc nền khi làm bài (không bắt buộc)</label>
+        <div class="row" style="flex-wrap:nowrap"><input type="url" id="s_music" placeholder="Dán link YouTube, link Google Drive hoặc link file .mp3"><button class="btn sm" id="musicTest" type="button">▶ Nghe thử</button></div>
+        <div class="row" style="margin-top:8px">
+          <label class="check" style="font-weight:600">Âm lượng <input type="range" id="s_musicVol" min="5" max="100" step="5" value="35" style="width:160px;accent-color:var(--brand-2)"> <span id="musicVolTxt">35%</span></label>
+          <label class="check"><input type="checkbox" id="s_musicMute" checked> Cho học sinh tắt / bật nhạc</label>
+        </div>
+        <div class="hint">YouTube: video phải cho phép nhúng (đa số video nhạc không lời đều được). Google Drive: file phải chia sẻ “Bất kỳ ai có đường liên kết”. Nhạc phát lặp lại đến khi nộp bài.</div>
+        <div id="musicMsg"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button class="btn" id="btnPreview">Xem thử như học sinh</button>
+        <button class="btn primary" id="btnSave">Lưu đề lên máy chủ &amp; tạo link</button>
+        <button class="btn sm" id="btnNew">Tạo đề mới</button>
+        <span class="spacer"></span><span class="muted" id="saveState"></span>
+      </div>
+      <div id="linkOut"></div>
+    </div>
+  </section>
+
+  <!-- ================= KẾT QUẢ ================= -->
+  <section class="section" id="sec-results">
+    <div class="card">
+      <div class="row"><h2 style="margin:0">Các đề đã tạo</h2><span class="spacer"></span><button class="btn sm" id="btnReloadExams">Tải lại</button></div>
+      <div class="scroll" style="margin-top:10px;max-height:300px"><table class="tbl" id="examTbl"></table></div>
+    </div>
+    <div class="card hide" id="resCard">
+      <div class="row">
+        <div><h2 style="margin:0" id="resTitle"></h2><div class="muted" id="resSub"></div></div>
+        <span class="spacer"></span>
+        <label class="check"><input type="checkbox" id="autoRef" checked> Tự cập nhật</label>
+        <button class="btn sm" id="btnRefresh">Cập nhật</button>
+        <button class="btn sm" id="btnToggle"></button>
+        <button class="btn accent" id="btnExport">Xuất Excel</button>
+      </div>
+      <div class="grid g4" id="stats" style="margin-top:14px"></div>
+      <div id="progressBox"></div>
+      <div class="scroll" style="margin-top:12px"><table class="tbl" id="resTbl"></table></div>
+      <p class="hint">File Excel xuất ra dùng nút <b>Quizz (App)</b> ở tab <b>Tính điểm</b> của file KQHT (.xlsm) để nhập điểm theo Họ và tên.</p>
+    </div>
+  </section>
+
+  <!-- ================= CÀI ĐẶT ================= -->
+  <section class="section" id="sec-setup">
+    <div class="card">
+      <h2>Kết nối máy chủ Google Apps Script</h2>
+      <p class="muted" style="margin-top:0">Máy chủ là 1 Google Sheet của thầy/cô (miễn phí) — nơi lưu đề, phát đề cho từng học sinh, chấm điểm và lưu kết quả. Cài 1 lần theo <a href="huong-dan.html" target="_blank">Hướng dẫn cài đặt</a>.</p>
+      <div class="grid g2">
+        <div><label>Địa chỉ Web App (kết thúc bằng /exec)</label><input type="url" id="c_api" placeholder="https://script.google.com/macros/s/……/exec"></div>
+        <div><label>Mật khẩu giáo viên (TEACHER_KEY trong Code.gs)</label><input type="password" id="c_key" placeholder="Mật khẩu"></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="btnConn">Lưu &amp; kiểm tra kết nối</button><span id="connMsg"></span></div>
+    </div>
+    <div class="card">
+      <h3>Sao lưu / chuyển máy</h3>
+      <p class="muted" style="margin-top:0">Xuất toàn bộ ngân hàng câu hỏi ra 1 file để mở trên máy khác (Windows ↔ Mac).</p>
+      <div class="row"><button class="btn" id="btnBackup">Xuất file sao lưu</button><label class="btn" for="restoreIn">Nhập file sao lưu</label><input type="file" id="restoreIn" accept=".json" class="hide"></div>
+    </div>
+  </section>
+</main>
+
+<div class="modal-bg" id="modal"><div class="modal" id="modalBody"></div></div>
+
+<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.6</span></div></footer>
+
+<script src="js/config.js"></script>
+<script src="js/common.js"></script>
+<script src="js/core.js"></script>
+<script src="js/docx.js"></script>
+<script>window.QUIZ_MODE = 'en';</script>
+<script src="js/teacher.js"></script>
+</body>
+</html>

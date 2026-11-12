@@ -127,6 +127,13 @@
       while (S.answers.length < S.items.length) S.answers.push(null);
       const lf = PREVIEW ? null : LS.get('att.' + S.attemptId, null);
       S.flags = (lf && lf.flags) || [];
+      S.plays = (lf && lf.plays) || {};
+      S.pending = [];
+      if (info.hasSpeak) {
+        $('#btnStart').textContent = 'Đang mở micro…';
+        const ok = await getMic();
+        if (!ok) toast('Chưa có quyền dùng micro — phần NÓI sẽ không ghi âm được. Hãy cho phép micro rồi tải lại trang.', 'bad');
+      }
       beginExam();
     } catch (e) {
       $('#btnStart').disabled = false; $('#btnStart').textContent = 'Bắt đầu làm bài';
@@ -145,8 +152,9 @@
     $('#wm').style.backgroundImage = 'url("data:image/svg+xml;charset=utf-8,' + encodeURIComponent(dark ? svgD : svg) + '")';
   }
   let lastV = 0;
+  let suppressV = 0; // tạm bỏ qua vi phạm khi trình duyệt hỏi quyền micro
   function violate(kind) {
-    if (!running) return;
+    if (!running || Date.now() < suppressV) return;
     const now = Date.now();
     showShield(kind);
     if (now - lastV < 1500) return;
@@ -183,7 +191,7 @@
   window.addEventListener('beforeunload', (e) => { if (running) { saveLocal(); e.preventDefault(); e.returnValue = ''; } });
 
   /* -------------------------------- làm bài -------------------------------- */
-  function saveLocal() { if (S && !PREVIEW) LS.set('att.' + S.attemptId, { answers: S.answers, violations: S.violations, log: S.log.slice(-200), idx: S.idx, flags: S.flags }); }
+  function saveLocal() { if (S && !PREVIEW) LS.set('att.' + S.attemptId, { answers: S.answers, violations: S.violations, log: S.log.slice(-200), idx: S.idx, flags: S.flags, plays: S.plays }); }
   function sendProgress() { if (PREVIEW || !S) return; api(API, { action: 'progress', attemptId: S.attemptId, idx: S.idx, answers: S.answers, violations: S.violations }, 1).catch(() => {}); }
   function beginExam() {
     running = true;
@@ -214,6 +222,7 @@
     }
   }
   function showQ(i, remain) {
+    stopAudio(); stopRec();
     S.idx = i; saveLocal(); sendProgress();
     const it = S.items[i], n = S.items.length;
     $('#qpos').textContent = 'Câu ' + (i + 1) + ' / ' + n;
@@ -226,11 +235,22 @@
         '<div class="opts">' + it.options.map((o, d) => '<button class="optb" data-d="' + d + '"><span class="lt">' + LET[d] + '</span><span>' + o + '</span></button>').join('') + '</div>';
     } else if (it.type === 'fill') {
       body = '<div class="pill" style="margin-bottom:10px">Điền vào ' + (it.nb > 1 ? it.nb + ' chỗ trống' : 'chỗ trống') + '</div>';
+    } else if (it.type === 'speak') {
+      body = '<div class="recbox"><div class="hint">Bấm nút đỏ để ghi âm câu trả lời — tối đa <b>' + (it.rec || 60) + ' giây</b>. Ghi lại được trước khi chuyển câu.</div>' +
+        '<button class="rbtn" id="recBtn" title="Ghi âm">🎙</button><div class="rtime" id="recTime">0:00 / ' + fmtSec(it.rec || 60) + '</div><div class="hint" id="recSt"></div><div id="recOut"></div></div>';
     } else {
       body = '<div class="essay"><textarea id="essay" placeholder="Nhập bài làm của em…">' + esc(S.answers[i] || '') + '</textarea><div class="hint" id="cc"></div></div>';
     }
     const stemHtml = it.type === 'fill' ? it.stem.replace(/<span class="blank" data-b="(\d+)">[^<]*<\/span>/g, (m, k) => '<input type="text" class="blankin" data-b="' + k + '" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="(' + (+k + 1) + ')" value="' + esc(((S.answers[i] || [])[+k]) || '') + '">') : it.stem;
-    $('#qcard').innerHTML = '<div class="qnum">Câu ' + (i + 1) + (it.pts !== 1 ? ' · ' + it.pts + ' điểm' : '') + (it.type === 'essay' ? ' · Tự luận' : it.type === 'fill' ? ' · Điền khuyết' : '') + '</div><div class="stem">' + stemHtml + '</div>' + body +
+    const SKN = { L: 'Nghe', R: 'Đọc', W: 'Viết', S: 'Nói' };
+    let pre = '';
+    if (it.group) {
+      const g = it.group;
+      pre = '<div class="passage"><div class="ptitle">' + esc(g.title || 'Đoạn dùng chung') + (g.size > 1 ? ' · câu ' + (g.pos) + '/' + g.size + ' của đoạn' : '') + '</div>' +
+        (g.audio ? audioBoxHtml('g:' + g.key, g.audio) : '') + (g.stem ? '<div class="ptext">' + g.stem + '</div>' : '') + '</div>';
+    }
+    if (it.audio) pre += audioBoxHtml('q:' + i, it.audio);
+    $('#qcard').innerHTML = pre + '<div class="qnum">Câu ' + (i + 1) + (it.skill ? ' · ' + SKN[it.skill] : '') + (it.pts !== 1 ? ' · ' + it.pts + ' điểm' : '') + (it.type === 'essay' ? (it.skill === 'W' ? '' : ' · Tự luận') : it.type === 'fill' ? ' · Điền khuyết' : it.type === 'speak' ? ' · Ghi âm' : '') + '</div><div class="stem">' + stemHtml + '</div>' + body +
       (FREE()
         ? '<div class="nav"><button class="btn" id="btnPrev"' + (i === 0 ? ' disabled' : '') + '>← Câu trước</button><button class="btn' + (S.flags[i] ? ' accent' : '') + '" id="btnFlag">' + (S.flags[i] ? '★ Đã đánh dấu' : '☆ Đánh dấu xem lại') + '</button><span class="spacer"></span><button class="btn primary" id="btnNext">' + (i === n - 1 ? 'Nộp bài' : 'Câu sau →') + '</button></div>'
         : '<div class="nav"><span class="muted" id="navHint" style="font-size:.88rem"></span><span class="spacer"></span><button class="btn primary" id="btnNext">' + (i === n - 1 ? 'Nộp bài' : 'Câu tiếp theo →') + '</button></div>');
@@ -242,6 +262,8 @@
       S.answers[i] = a; paint(); saveLocal(); if ($('#navHint')) $('#navHint').textContent = ''; if (FREE()) { palette(); $('#progbar').style.width = (answeredCount() / n * 100) + '%'; }
     });
     paint();
+    $$('.audbox[data-ak]').forEach(box => setupAudioBox(box));
+    if (it.type === 'speak') setupRecorder(i, it);
     const fins = $$('.blankin');
     if (fins.length) {
       fins.forEach(inp => inp.oninput = () => {
@@ -252,7 +274,7 @@
       setTimeout(() => fins[0].focus(), 50);
     }
     const ta = $('#essay');
-    if (ta) { const cc = () => { $('#cc').textContent = ta.value.length + ' ký tự'; }; ta.oninput = () => { S.answers[i] = ta.value; cc(); saveLocal(); if (FREE()) palette(); }; cc(); setTimeout(() => ta.focus(), 50); }
+    if (ta) { const cc = () => { $('#cc').textContent = info.kind === 'en' ? ta.value.trim().split(/\s+/).filter(Boolean).length + ' từ' : ta.value.length + ' ký tự'; }; ta.oninput = () => { S.answers[i] = ta.value; cc(); saveLocal(); if (FREE()) palette(); }; cc(); setTimeout(() => ta.focus(), 50); }
     if (FREE()) {
       $('#btnNext').onclick = () => { if (i === n - 1) confirmSubmit(); else showQ(i + 1); };
       $('#btnPrev').onclick = () => { if (i > 0) showQ(i - 1); };
@@ -296,8 +318,122 @@
     window.scrollTo(0, 0);
   }
   function next() { if (!running) return; if (S.idx < S.items.length - 1) showQ(S.idx + 1); }
+
+  /* ---------------------------- file nghe (đề Tiếng Anh) ---------------------------- */
+  const AUD = { el: null, key: null, cache: {} };
+  const AREF = {};
+  function audioBoxHtml(key, ref) {
+    if (!ref || ref.missing) return '<div class="msg warn">Thiếu file nghe' + (ref && ref.missing ? ' (' + esc(ref.missing) + ')' : '') + ' — báo giáo viên.</div>';
+    AREF[key] = ref;
+    return '<div class="audbox" data-ak="' + esc(key) + '"><button class="abtn" type="button" title="Nghe">▶</button><div class="abar"><i></i></div><div class="ainfo"></div></div>';
+  }
+  function stopAudio() { if (AUD.el) { try { AUD.el.pause(); } catch (e) { /* bỏ qua */ } AUD.el = null; AUD.key = null; } }
+  async function audioViaServer(ref) {
+    if (AUD.cache[ref.id]) return AUD.cache[ref.id];
+    let parts = 1; const chunks = []; let mime = 'audio/mpeg';
+    for (let k = 0; k < parts; k++) {
+      const r = await api(API, { action: 'audio', examId: EXAM_ID, id: ref.id, part: k });
+      parts = r.parts; mime = r.mime || mime;
+      chunks.push(Uint8Array.from(atob(r.b64), c => c.charCodeAt(0)));
+    }
+    return (AUD.cache[ref.id] = URL.createObjectURL(new Blob(chunks, { type: mime })));
+  }
+  function setupAudioBox(box) {
+    const key = box.dataset.ak, ref = AREF[key];
+    const btn = box.querySelector('.abtn'), bar = box.querySelector('.abar > i'), inf = box.querySelector('.ainfo');
+    const P = +info.audioPlays || 0;
+    const paint = (playing) => {
+      const used = S.plays[key] || 0, left = P ? Math.max(0, P - used) : Infinity;
+      btn.disabled = playing || left <= 0;
+      btn.textContent = playing ? '♪' : '▶';
+      inf.textContent = playing ? 'Đang phát…' : (P ? (left > 0 ? 'Còn ' + left + ' lần nghe' : 'Đã hết lượt nghe') : 'Nghe không giới hạn');
+    };
+    const play = async () => {
+      const used = S.plays[key] || 0;
+      if (P && used >= P) return;
+      stopAudio();
+      S.plays[key] = used + 1; saveLocal(); paint(true);
+      const el = new Audio(); AUD.el = el; AUD.key = key; el.preload = 'auto';
+      el.ontimeupdate = () => { if (el.duration) bar.style.width = (el.currentTime / el.duration * 100) + '%'; };
+      el.onended = () => { bar.style.width = '100%'; if (AUD.el === el) AUD.el = null; paint(false); };
+      let triedServer = false;
+      const fail = () => { S.plays[key] = used; saveLocal(); paint(false); inf.textContent = 'Không phát được — bấm ▶ thử lại'; };
+      el.onerror = async () => {
+        if (AUD.el !== el) return;
+        if (!triedServer && ref.id && !PREVIEW) {
+          triedServer = true; inf.textContent = 'Đang tải file nghe…';
+          try { el.src = await audioViaServer(ref); await el.play(); paint(true); return; } catch (e) { /* tiếp tục báo lỗi */ }
+        }
+        fail();
+      };
+      el.src = AUD.cache[ref.id] || ref.src;
+      try { await el.play(); } catch (e) { if (e && e.name === 'NotAllowedError') { S.plays[key] = used; saveLocal(); paint(false); inf.textContent = 'Bấm ▶ để nghe'; } }
+    };
+    btn.onclick = play;
+    paint(false);
+    if (!(S.plays[key] > 0)) setTimeout(() => { if (box.isConnected && running) play(); }, 350);
+  }
+
+  /* ---------------------------- ghi âm câu NÓI ---------------------------- */
+  const REC = { mr: null, timer: null };
+  async function getMic() {
+    if (S.stream) return true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return false;
+    suppressV = Date.now() + 8000;
+    try { S.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); suppressV = Date.now() + 1500; return true; }
+    catch (e) { suppressV = Date.now() + 1500; return false; }
+  }
+  function stopRec() { if (REC.mr && REC.mr.state === 'recording') REC.mr.stop(); clearInterval(REC.timer); }
+  function blobB64(b) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(b); }); }
+  function setupRecorder(i, it) {
+    const btn = $('#recBtn'), tEl = $('#recTime'), st = $('#recSt'), out = $('#recOut');
+    const max = it.rec || 60;
+    const showDone = (a, url) => {
+      st.innerHTML = a && a.rec ? '<span class="pill ok">✓ Đã lưu bài nói' + (a.dur ? ' (' + Math.round(a.dur) + ' giây)' : '') + '</span> — bấm 🎙 để ghi lại' : '';
+      out.innerHTML = url ? '<audio controls src="' + url + '"></audio>' : '';
+    };
+    showDone(S.answers[i], S.recUrl && S.recUrl[i]);
+    btn.onclick = async () => {
+      if (REC.mr && REC.mr.state === 'recording') { stopRec(); return; }
+      if (!(await getMic())) { st.innerHTML = '<span class="pill bad">Không dùng được micro — kiểm tra quyền micro của trình duyệt rồi tải lại trang.</span>'; return; }
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+      const mr = new MediaRecorder(S.stream, mime ? { mimeType: mime, audioBitsPerSecond: 48000 } : undefined);
+      const chunks = []; const t0 = Date.now();
+      REC.mr = mr;
+      mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      mr.onstop = () => {
+        clearInterval(REC.timer); btn.classList.remove('on'); btn.textContent = '🎙';
+        const dur = (Date.now() - t0) / 1000;
+        const blob = new Blob(chunks, { type: mr.mimeType || mime || 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        S.recUrl = S.recUrl || {}; S.recUrl[i] = url;
+        if (PREVIEW) { S.answers[i] = { rec: 'preview', dur }; saveLocal(); if (S.idx === i) showDone(S.answers[i], url); if (FREE()) palette(); return; }
+        if (S.idx === i) { out.innerHTML = '<audio controls src="' + url + '"></audio>'; st.innerHTML = '<span class="pill">Đang lưu bài nói…</span>'; }
+        const job = (async () => {
+          for (let k = 0; k < 3; k++) {
+            try {
+              const r = await api(API, { action: 'uploadSpeech', attemptId: S.attemptId, idx: i, mime: blob.type, b64: await blobB64(blob) }, 1);
+              S.answers[i] = { rec: r.id, dur }; saveLocal(); sendProgress();
+              if (S.idx === i && $('#recSt')) showDone(S.answers[i], url);
+              if (FREE()) palette();
+              return;
+            } catch (e) { await new Promise(r => setTimeout(r, 1500 * (k + 1))); }
+          }
+          if (S.idx === i && $('#recSt')) $('#recSt').innerHTML = '<span class="pill bad">Chưa lưu được bài nói (mạng?) — bấm 🎙 ghi lại</span>';
+        })();
+        S.pending.push(job);
+      };
+      mr.start(1000);
+      btn.classList.add('on'); btn.textContent = '■'; st.textContent = 'Đang ghi âm… bấm ■ để dừng';
+      REC.timer = setInterval(() => {
+        const sec = (Date.now() - t0) / 1000;
+        if (tEl.isConnected) tEl.textContent = fmtSec(sec) + ' / ' + fmtSec(max);
+        if (sec >= max) stopRec();
+      }, 250);
+    };
+  }
   function FREE() { return info && info.navMode === 'free'; }
-  const isAnswered = (k) => { const a = S.answers[k], t = S.items[k].type; return t === 'mc' ? !!(a && a.length) : t === 'fill' ? !!(Array.isArray(a) && a.some(x => String(x || '').trim())) : !!(a && String(a).trim()); };
+  const isAnswered = (k) => { const a = S.answers[k], t = S.items[k].type; return t === 'speak' ? !!(a && a.rec) : t === 'mc' ? !!(a && a.length) : t === 'fill' ? !!(Array.isArray(a) && a.some(x => String(x || '').trim())) : !!(a && String(a).trim()); };
   function answeredCount() { let c = 0; for (let k = 0; k < S.items.length; k++) if (isAnswered(k)) c++; return c; }
   function palette() {
     const el = $('#pal'); if (!el) return;
@@ -339,8 +475,10 @@
   async function submit(reason) {
     if (submitting) return; submitting = true;
     clearInterval(timerH); running = false;
-    saveLocal();
+    stopAudio(); stopRec();
     $('#qcard') && ($('#qcard').innerHTML = '<h2>Đang nộp bài…</h2><p class="muted">Vui lòng không đóng trang.</p>');
+    if (S.pending && S.pending.length) { await new Promise(r => setTimeout(r, 400)); await Promise.allSettled(S.pending); }
+    saveLocal();
     if (PREVIEW) { done(gradePreview(), reason); return; }
     const payload = { action: 'submit', attemptId: S.attemptId, answers: S.answers, violations: S.violations, log: S.log.slice(-200), reason };
     for (let k = 0; k < 6; k++) {
@@ -364,10 +502,11 @@
   }
   function gradePreview() {
     const g = QuizCore.grade(previewExam, S.paper, S.answers, {});
-    return { score: g.score, right: g.mcRight, mcCount: g.mcCount, essayPending: g.essayPending, scale: info.scale, review: g };
+    return { score: g.score, right: g.mcRight, mcCount: g.mcCount, essayPending: g.essayPending, scale: info.scale, review: g, skills: g.skills, toeic: g.toeic };
   }
   function done(r, reason) {
-    exitFull(); QA.Music.stop();
+    exitFull(); QA.Music.stop(); stopAudio();
+    if (S && S.stream) { try { S.stream.getTracks().forEach(t => t.stop()); } catch (e) { /* bỏ qua */ } }
     document.body.classList.remove('exam');
     $('#shield').classList.remove('on'); $('#wm').style.backgroundImage = 'none';
     let h = header() + '<div class="wrap done"><div class="card">';
@@ -377,6 +516,11 @@
       if (r.score != null) h += '<div class="bigscore">' + String(r.score).replace('.', ',') + '<span style="font-size:1.2rem;color:var(--muted)"> / ' + (r.scale || 10) + '</span></div><p>Đúng <b>' + r.right + '/' + r.mcCount + '</b> câu' + (r.essayPending ? ' · ' + r.essayPending + ' câu tự luận chờ giáo viên chấm' : '') + '</p>';
       else h += '<p>Kết quả đã được gửi đến giáo viên.</p>';
       if (r.already) h += '<p class="hint">(Bài này đã được nộp trước đó.)</p>';
+      if (r.skills) {
+        const N = { L: 'Nghe', R: 'Đọc', W: 'Viết', S: 'Nói' };
+        h += '<div class="skillsum">' + ['L', 'R', 'W', 'S'].filter(k => r.skills[k]).map(k => { const o = r.skills[k]; return '<div><span class="muted">' + N[k] + '</span><b>' + (o.pending ? '…' : String(o.score).replace('.', ',')) + '</b><span class="hint">' + (o.pending ? 'chờ giáo viên chấm' : (o.count - o.pending > 0 && (k === 'L' || k === 'R') ? 'đúng ' + o.right + '/' + o.count : 'thang 10')) + '</span></div>'; }).join('') + '</div>';
+        if (r.toeic && r.toeic.LR != null) h += '<p>Quy đổi TOEIC (tham khảo): <b>' + r.toeic.LR + '</b> / 990' + (r.toeic.L != null ? ' · Nghe ' + r.toeic.L : '') + (r.toeic.R != null ? ' · Đọc ' + r.toeic.R : '') + '</p>';
+      }
       if (r.attemptNo) h += '<p class="muted">Lần làm thứ ' + r.attemptNo + (r.maxAttempts ? ' / ' + r.maxAttempts + ' lần cho phép' : ' (luyện tập — không giới hạn số lần)') + '</p>';
       const w = info.window || {};
       const canAgain = !PREVIEW && r.attemptNo && (!r.maxAttempts || r.attemptNo < r.maxAttempts) && !(w.end && srvNow() >= w.end) && !(w.to && srvNow() > w.to);

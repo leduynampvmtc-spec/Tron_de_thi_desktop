@@ -1,7 +1,7 @@
 {
   "name": "tron-de-thi-online",
   "productName": "Tron De Thi Online",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Phần mềm trộn đề thi trắc nghiệm, điền khuyết, tự luận — Lê Duy Nam, Giảng viên Trường Cao đẳng Dầu khí",
   "author": "Lê Duy Nam <Truong Cao dang Dau khi>",
   "license": "UNLICENSED",
@@ -20,14 +20,33 @@
     "productName": "Tron De Thi Online",
     "copyright": "Lê Duy Nam — Trường Cao đẳng Dầu khí",
     "asar": false,
-    "directories": { "buildResources": "build", "output": "dist" },
-    "files": ["main.js", "app-config.json", "build/icon.png", "app/**/*", "package.json"],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "app-config.json",
+      "build/icon.png",
+      "app/**/*",
+      "package.json"
+    ],
     "afterPack": "build/afterPack.js",
     "win": {
       "icon": "build/icon.png",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -39,7 +58,9 @@
       "shortcutName": "Trộn đề thi Online",
       "artifactName": "TronDeThi-CaiDat-Windows-${version}.${ext}"
     },
-    "portable": { "artifactName": "TronDeThi-ChayNgay-Windows-${version}.${ext}" },
+    "portable": {
+      "artifactName": "TronDeThi-ChayNgay-Windows-${version}.${ext}"
+    },
     "mac": {
       "icon": "build/icon.png",
       "category": "public.app-category.education",
@@ -47,10 +68,21 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
-      "artifactName": "TronDeThi-Mac-${arch}-${version}.${ext}"
+      "artifactName": "TronDeThi-Mac-${arch}-${version}.${ext}",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Phần mềm cần micro để học sinh ghi âm câu trả lời phần Nói (đề Tiếng Anh)."
+      }
     },
-    "dmg": { "title": "Tron De Thi Online ${version}" }
+    "dmg": {
+      "title": "Tron De Thi Online ${version}"
+    }
   }
 }
