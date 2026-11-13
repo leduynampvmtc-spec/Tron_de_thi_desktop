@@ -444,6 +444,26 @@
   /* ======================= ĐỀ TOEIC NGUYÊN BỘ (sách đề + phiếu trả lời) ======================= */
   const BA = { el: null, k: null, lastSave: 0 };
   const IMGC = {};
+  /* v1.9 — tùy chọn của giáo viên: tự lật trang theo file nghe, khóa quay lại trang / phần Nghe */
+  const LOCKL = () => !!(info && info.bkLockL), LOCKSEC = () => !!(info && info.bkLockSec), AUTOPG = () => !(info && info.bkAuto === false);
+  const lIdx = (pi) => (S.secPages && S.secPages.L ? S.secPages.L.indexOf(pi) : -1);
+  function pageAllowed(sec, pi) {
+    if (sec !== 'L') return true;
+    if (LOCKSEC() && S.bk.inR) return false;
+    if (LOCKL() && S.bk.lMax != null && lIdx(pi) < S.bk.lMax) return false;
+    return true;
+  }
+  function lockNote(t) { const m = $('#aMsg') || $('#shTitle'); QA.toast ? QA.toast(t, 'warn') : (m && (m.textContent = t)); }
+  /** Lật trang theo mốc thời gian trong file nghe (mỗi mốc = câu đầu của 1 đoạn nghe) */
+  function autoTurn(k, t) {
+    if (!AUTOPG() || S.bk.sec !== 'L') return;
+    const mk = S.B.marks && S.B.marks[k]; if (!mk || !mk.length) return;
+    let m = null; for (const x of mk) { if (x.t <= t + 0.25) m = x; else break; }
+    if (!m || BA.mark === k + ':' + m.n) return; BA.mark = k + ':' + m.n;
+    const it = S.items.find(x => x.skill === 'L' && +x.num === +m.n && x.page != null); if (!it || it.page === S.bk.page) return;
+    const onPg = S.items.filter(x => x.skill === 'L' && x.page === S.bk.page).map(x => +x.num);
+    if (!onPg.length || Math.max.apply(null, onPg) < +m.n) showPage(it.page);
+  }
   function stopBookAudio() { if (BA.el) { try { BA.el.pause(); } catch (e) { /* bỏ qua */ } BA.el = null; BA.k = null; } }
   function beginBooklet() {
     running = true;
@@ -497,9 +517,18 @@
     paintStatus();
     window.scrollTo(0, 0);
   }
-  function switchSec(k, keepPage) {
+  function switchSec(k, keepPage, ok) {
+    if (k === 'L' && LOCKSEC() && S.bk.inR) { lockNote('Đã sang phần Đọc — không quay lại phần Nghe được.'); return; }
+    if (k === 'R' && !keepPage && !ok && LOCKSEC() && !S.bk.inR && S.secs.includes('L')) {
+      $('#modalBody').innerHTML = '<h2>Sang phần Đọc?</h2><p>Sau khi sang phần <b>Reading</b>, em <b>không quay lại</b> phần Listening được nữa (file nghe dừng).</p><div class="row" style="justify-content:flex-end"><button class="btn" id="mNo">Ở lại phần Nghe</button><button class="btn primary" id="mYes">Sang phần Đọc</button></div>';
+      $('#modal').classList.add('on');
+      $('#mNo').onclick = () => $('#modal').classList.remove('on');
+      $('#mYes').onclick = () => { $('#modal').classList.remove('on'); stopBookAudio(); S.bk.apos = null; switchSec('R', false, true); window.scrollTo({ top: 0 }); };
+      return;
+    }
+    if (k === 'R') S.bk.inR = true;
     S.bk.sec = k;
-    $$('.bktab').forEach(b => b.classList.toggle('on', b.dataset.sec === k));
+    $$('.bktab').forEach(b => { b.classList.toggle('on', b.dataset.sec === k); b.disabled = b.dataset.sec === 'L' && LOCKSEC() && !!S.bk.inR; });
     const pages = S.secPages[k];
     $('#pgSel').innerHTML = pages.map((pi, j) => '<option value="' + pi + '">Trang ' + (j + 1) + ' / ' + pages.length + pageLabel(pi) + '</option>').join('');
     paintAudio();
@@ -534,6 +563,8 @@
     imgSrc(pg).then(u => { img.src = u; });
   }
   function showPage(pi) {
+    if (!pageAllowed(S.bk.sec, pi)) { const back = S.secPages.L[S.bk.lMax]; lockNote('Không quay lại trang đã qua của phần Nghe.'); if (back == null || back === pi) return; pi = back; }
+    if (S.bk.sec === 'L') { const j = lIdx(pi); if (j >= 0 && (S.bk.lMax == null || j > S.bk.lMax)) S.bk.lMax = j; }
     S.bk.page = pi; S.bk['p' + S.bk.sec] = pi;
     const B = S.B, pg = B.pages[pi];
     $('#pgSel').value = String(pi);
@@ -544,7 +575,8 @@
     // tải trước trang sau
     const pages = S.secPages[S.bk.sec], nx = pages[pages.indexOf(pi) + 1];
     if (nx != null && B.pages[nx] && B.pages[nx].src && !IMGC[B.pages[nx].id]) { const pre = new Image(); pre.src = B.pages[nx].src; }
-    $('#pgPrev').disabled = $('#pgPrev2').disabled = pages.indexOf(pi) <= 0 && S.secs.indexOf(S.bk.sec) === 0;
+    $('#pgPrev').disabled = $('#pgPrev2').disabled = (pages.indexOf(pi) <= 0 && (S.secs.indexOf(S.bk.sec) === 0 || (S.bk.sec === 'R' && LOCKSEC()))) || (S.bk.sec === 'L' && LOCKL() && pages.indexOf(pi) <= (S.bk.lMax || 0));
+    $$('#pgSel option').forEach(o => { o.disabled = !pageAllowed(S.bk.sec, +o.value); });
     renderSheet();
     const first = S.items.findIndex(it => it.page === pi && it.skill === S.bk.sec);
     if (first >= 0) S.idx = first;
@@ -596,6 +628,7 @@
     el.innerHTML = S.secs.map(sec => '<div class="shpart" style="grid-column:1/-1">' + (sec === 'L' ? 'Listening' : 'Reading') + '</div>' + S.items.map((it, k) => it.skill !== sec ? '' : '<button class="pb' + (isAnswered(k) ? ' ans' : '') + '" data-k="' + k + '">' + it.num + ((S.answers[k] || []).length ? '<small>' + LET[S.answers[k][0]] + '</small>' : '') + '</button>').join('')).join('');
     $$('.pb', el).forEach(b => b.onclick = () => {
       const k = +b.dataset.k, it = S.items[k];
+      if (it.skill === 'L' && !pageAllowed('L', it.page)) { lockNote(LOCKSEC() && S.bk.inR ? 'Đã sang phần Đọc — không quay lại phần Nghe được.' : 'Không quay lại trang đã qua của phần Nghe.'); return; }
       if (it.skill !== S.bk.sec) switchSec(it.skill);
       if (it.page != null) showPage(it.page);
       renderSheet(k);
@@ -658,6 +691,7 @@
       if (el.duration && bar) bar.style.width = (el.currentTime / el.duration * 100) + '%';
       if (t) t.textContent = fmtSec(el.currentTime) + ' / ' + (el.duration ? fmtSec(el.duration) : '…');
       S.bk.apos = { k, t: el.currentTime };
+      autoTurn(k, el.currentTime);
       if (Date.now() - BA.lastSave > 3000) { BA.lastSave = Date.now(); saveLocal(); }
     };
     el.onended = () => {
@@ -679,7 +713,7 @@
     el.src = AUD.cache[ref.id] || ref.src;
     // chuyển tới trang đầu của Part đang nghe
     // học sinh đang ở trang của Part trước => tự lật tới trang đầu của Part đang nghe (đang xem trước câu hỏi thì giữ nguyên)
-    if (S.bk.sec === 'L' && k !== 'all') {
+    if (S.bk.sec === 'L' && k !== 'all' && AUTOPG()) {
       const it = S.items.find(x => x.skill === 'L' && String(x.part) === k && x.page != null);
       const onPg = S.items.filter(x => x.skill === 'L' && x.page === S.bk.page).map(x => +x.part);
       if (it && it.page !== S.bk.page && (!onPg.length || Math.max.apply(null, onPg) < +k)) showPage(it.page);

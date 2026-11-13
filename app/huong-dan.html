@@ -28,7 +28,7 @@
     <p style="margin-top:0">Để dùng phần mềm, mỗi thầy/cô cần <b>1 Google Sheet riêng</b> làm “máy chủ” (nơi lưu đề, phát đề cho từng học sinh, chấm điểm và lưu kết quả). Việc này chỉ làm <b>1 lần</b>, sau đó dùng cho mọi bài, mọi lớp.</p>
     <div class="msg info"><b>Trang chủ 2 trong 1:</b> mở phần mềm (web, Windows, Mac, Android) sẽ thấy 2 ô — <b>Sổ từ vựng TOEIC</b> (tự học từ vựng, ngữ pháp, đọc hiểu, tra từ) và <b>Trộn đề thi Online</b> (giáo viên ra đề, học sinh dán link làm bài). Nút ⌂ để quay về trang chủ.</div>
     <div class="msg info">Chưa cài Google Sheet vẫn dùng được nút <b>“Xem thử như học sinh”</b> để kiểm tra đề ngay trên máy.</div>
-    <div class="msg info row" style="justify-content:space-between"><span>Bản <b>hướng dẫn đầy đủ có hình minh họa</b> (PDF, 24 trang) để in hoặc gửi đồng nghiệp.</span><a class="btn sm primary" href="mau/Huong_dan_su_dung_Tron_de_thi_Online.pdf" download>Tải hướng dẫn PDF</a></div>
+    <div class="msg info row" style="justify-content:space-between"><span>Bản <b>hướng dẫn đầy đủ có hình minh họa</b> (PDF, 32 trang) để in hoặc gửi đồng nghiệp.</span><a class="btn sm primary" href="mau/Huong_dan_su_dung_Tron_de_thi_Online.pdf" download>Tải hướng dẫn PDF</a></div>
   </div>
 
   <div class="card">
@@ -47,6 +47,7 @@
         Bấm <b>Triển khai</b> → sao chép <b>URL ứng dụng web</b> (kết thúc bằng <code>/exec</code>).</li>
       <li>Mở <a href="giaovien.html">Trang giáo viên</a> → mục <b>Cài đặt máy chủ</b> → dán URL và mật khẩu → bấm <b>Lưu &amp; kiểm tra kết nối</b>. Thấy “Kết nối tốt — mật khẩu đúng” là xong.</li>
     </ol>
+    <div class="msg bad"><b>Cập nhật bản 2.0 (13/11/2026):</b> thầy/cô đã cài từ trước cần <b>dán đè mã Code.gs mới</b> (nút “Sao chép toàn bộ mã” ở trên) → <b>Lưu</b> → <b>Triển khai → Quản lý các tùy chọn triển khai → ✎ → Phiên bản mới → Triển khai</b>. Mở địa chỉ Web App (…/exec) thấy <code>"version":"2.0"</code> là xong. Trang giáo viên → <b>Cài đặt máy chủ → Kiểm tra kết nối</b> cũng báo nếu máy chủ còn bản cũ.</div>
     <div class="msg warn">Chỉ cần <b>1 bản triển khai duy nhất</b>. Không tạo triển khai mới cho mỗi bài kiểm tra. Khi có bản cập nhật: dán đè mã mới → <b>Triển khai → Quản lý các tùy chọn triển khai → chọn bản đang dùng → ✎ → Phiên bản mới → Triển khai</b> (URL giữ nguyên, link đã gửi vẫn dùng được).</div>
     <div class="msg info"><b>Từ bản 1.6 (có đề Tiếng Anh)</b>: sau khi dán mã mới, chọn hàm <b>caiDat</b> → <b>Chạy</b> một lần và bấm <b>Cho phép</b> để cấp thêm quyền <b>Google Drive</b> (lưu file nghe và bản ghi âm), rồi mới tạo <b>Phiên bản mới</b>.</div>
     <p>Kết quả lưu trong 3 trang tính của Google Sheet: <b>DeThi</b> (các đề), <b>LuotThi</b> (học sinh đang làm), <b>KetQua</b> (điểm). Đáp án chỉ nằm trên máy chủ, học sinh không xem được.</p>
@@ -115,7 +116,11 @@
       <li><b>File nghe từng câu</b> (E26-T01-01.mp3, E26-T01-32-34.mp3…) được tự xếp vào Part 1–4 và <b>gộp</b> thành 1 file mỗi Part khi lưu.</li>
       <li>File <b>.txt</b> có dòng <code>LC: ,1,3,5,7,32…</code> và <code>RC: 101,109,121…</code> (câu đầu mỗi trang) được tự điền vào ô câu đầu mỗi trang.</li>
       <li>Bộ đề đã tách sẵn (mỗi bộ 1 file .zip gồm LC, RC, file nghe Part 1–4, đáp án và câu đầu mỗi trang): chỉ cần chọn file .zip → <b>Bước tiếp: đọc file PDF đề</b> → <b>Lưu</b>.</li>
-      <li><b>File nén chứa nhiều đề</b> (cả thư mục 10 bộ, hoặc 10 file .zip gộp lại): phần mềm hiện nút <b>Test 01 … Test 10</b> — bấm chọn đề cần nạp → đọc → Lưu. Mở lại “+ Nạp đề nguyên bộ” để chọn tiếp đề khác (đề đã nạp có dấu ✓), không cần chọn lại file.</li>
+      <li><b>File nén chứa nhiều đề</b> (cả thư mục 10 bộ, hoặc 10 file .zip gộp lại): phần mềm hiện nút <b>Test 01 … Test 10</b> — bấm chọn đề cần nạp → đọc → Lưu; hoặc bấm <b>⚡ Nạp tất cả</b> để phần mềm tự nạp lần lượt cả 10 đề, mỗi đề thành 1 ngân hàng riêng (khoảng 1–2 phút / đề, để nguyên cửa sổ đến khi xong; cuối cùng có bảng báo cáo từng đề). Cũng có thể <b>chọn cả một thư mục</b> (không cần nén).</li>
+      <li><b>Khi học sinh làm đề nguyên bộ</b> (tab 2 → Cài đặt làm bài, mục “Đề TOEIC nguyên bộ”):
+        <b>Tự lật trang theo file nghe</b> — hết câu ở trang thì tự sang trang có câu tiếp theo (cần file nghe từng câu như E26-T01-01.mp3 để biết mốc từng đoạn; nếu chỉ có 1 file liền cho mỗi Part thì trang chỉ tự lật khi sang Part mới);
+        <b>Phần Nghe: không cho quay lại trang đã qua</b>;
+        <b>Sang phần Đọc thì không quay lại phần Nghe</b> (học sinh được hỏi xác nhận trước khi sang, file nghe dừng).</li>
       <li><b>File nén cả cuốn sách</b> (vd <i>ETS 2026 PUBLIC.zip</i> gồm LC.pdf, RC.pdf, AUDIO/Test 1…10, KEY, TRANSCRIPT): cũng hiện nút Test 01 … Test 10. Chọn 1 Test, phần mềm <b>tự tìm trang của Test đó</b> trong cuốn LC và RC (nhận trang bìa), lấy file nghe trong AUDIO/Test N, đọc đáp án từ KEY và file .txt đáp án nếu có. Lần đầu dò trang mất khoảng 1 phút; nên dùng máy tính (file nén lớn).</li>
       <li><b>Bảng đáp án dạng ảnh</b> (trang ANSWERS scan cuối sách, ảnh chụp bảng đáp án .jpg/.png, file PDF ảnh như <i>Listening_key_1.pdf</i>): phần mềm <b>tự đọc</b> các ô “101 (B)…”, tự biết phần Nghe hay Đọc (theo số câu 1… hay 101…) và lấy đúng Test đang nạp; file có nhiều Test mà chưa rõ Test nào thì hiện ô chọn Test. Ô nào chưa đọc được sẽ báo để gõ thêm. Ảnh <b>HEIC</b> của iPhone: mở bằng Safari, hoặc chuyển sang JPG trước.</li>
     </ul>
@@ -164,7 +169,7 @@
   (function () {
     var code = '', pre = document.getElementById('codePre'), info = document.getElementById('codeInfo');
     fetch('code/Code.txt', { cache: 'no-cache' }).then(function (r) { if (!r.ok) throw 0; return r.text(); }).then(function (t) {
-      code = t; pre.textContent = t; info.textContent = t.split('\n').length + ' dòng';
+      code = t; pre.textContent = t; var vm = t.match(/QC_VERSION = '([^']+)'/); info.innerHTML = (vm ? '<b>Mã bản ' + vm[1] + '</b> · ' : '') + t.split('\n').length + ' dòng';
     }).catch(function () { pre.textContent = 'Không tải được mã. Bấm "Tải file Code.gs" hoặc liên hệ thầy Lê Duy Nam.'; });
     document.getElementById('copyCode').onclick = function () {
       if (!code) return QA.toast('Mã chưa tải xong', 'bad');

@@ -2,7 +2,7 @@
  * core.js — Lõi trộn đề / chấm điểm (dùng chung cho trình duyệt và
  * máy chủ Google Apps Script). Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí
  * ===================================================================== */
-var QC_VERSION = '1.9';
+var QC_VERSION = '2.0';
 
 function QC_hash(str) {
   var h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0;
@@ -196,7 +196,8 @@ function QC_bookInfo(exam, paper) {
     out[it.b] = {
       name: b.name || '',
       pages: (b.book.pages || []).map(function (pg) { return { id: pg.id || null, src: pg.id ? QC_pageSrc(pg.id) : (pg.src || ''), sec: pg.sec || '', w: pg.w || 0, h: pg.h || 0 }; }),
-      parts: parts
+      parts: parts,
+      marks: b.book.marks || null
     };
   });
   return out;
@@ -354,6 +355,7 @@ function QC_publicInfo(exam) {
     showScore: st.showScore !== false, scale: +st.scale || 10,
     window: QC_window(st), maxAttempts: QC_maxAttempts(st), showReview: !!st.showReview, requireApp: !!st.requireApp,
     kind: exam.kind === 'en' ? 'en' : 'subject', audioPlays: st.audioPlays != null && st.audioPlays !== '' ? +st.audioPlays : 1,
+    bkAuto: st.bkAuto !== false, bkLockL: !!st.bkLockL, bkLockSec: !!st.bkLockSec,
     hasSpeak: paper.items.some(function (it) { return exam.banks[it.b].questions[it.q].type === 'speak'; }),
     hasAudio: paper.items.some(function (it) { var b = exam.banks[it.b], q = b.questions[it.q]; return !!(q.audio || (b.book && q.skill === 'L') || (q.g != null && b.groups && b.groups[q.g] && b.groups[q.g].audio)); }),
     booklet: paper.items.some(function (it) { return !!exam.banks[it.b].book; }),

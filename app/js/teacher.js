@@ -28,7 +28,10 @@
     $('#connMsg').innerHTML = '<span class="muted">Đang kiểm tra…</span>';
     try {
       const r = await api(conf().api, { action: 'ping', key: conf().key });
-      $('#connMsg').innerHTML = r.teacher ? '<span class="pill ok">Kết nối tốt — mật khẩu đúng</span>' : '<span class="pill bad">Kết nối được nhưng SAI mật khẩu</span>';
+      const sv = String(r.version || ''), wv = String(QuizCore.version || '');
+      const old = sv && wv && sv.split('.').map(Number).reduce((a, x, i) => a || ((x || 0) !== (+wv.split('.')[i] || 0) ? ((x || 0) < (+wv.split('.')[i] || 0) ? -1 : 1) : 0), 0) < 0;
+      $('#connMsg').innerHTML = (r.teacher ? '<span class="pill ok">Kết nối tốt — mật khẩu đúng</span>' : '<span class="pill bad">Kết nối được nhưng SAI mật khẩu</span>') + ' <span class="pill">Máy chủ bản ' + esc(sv || '?') + '</span>' +
+        (old ? '<div class="msg warn" style="margin-top:8px">Máy chủ (Code.gs) đang là bản <b>' + esc(sv) + '</b>, phần mềm là bản <b>' + esc(wv) + '</b>. Hãy dán mã Code.gs mới (xem <a href="huong-dan.html">Hướng dẫn</a>) → Triển khai → Quản lý → ✎ → <b>Phiên bản mới</b>, nếu không một số tính năng mới sẽ không chạy.</div>' : '');
     } catch (e) { $('#connMsg').innerHTML = '<span class="pill bad">' + esc(e.message) + '</span>'; }
   };
   function needConn() {
@@ -223,6 +226,7 @@
     $('#s_policy').value = s.scorePolicy || 'max'; $('#s_review').checked = !!s.showReview; $('#s_requireApp').checked = !!s.requireApp;
     if ($('#s_plays')) $('#s_plays').value = String(s.audioPlays != null && s.audioPlays !== '' ? s.audioPlays : 1);
     if ($('#s_toeic')) $('#s_toeic').checked = !!s.toeic;
+    if ($('#s_bkAuto')) { $('#s_bkAuto').checked = s.bkAuto !== false; $('#s_bkLockL').checked = !!s.bkLockL; $('#s_bkLockSec').checked = !!s.bkLockSec; }
     $('#s_nav').value = s.navMode === 'free' ? 'free' : 'strict'; $('#s_ftime').value = s.freeTime === 'total' ? 'total' : 'none'; $('#s_tmin').value = s.totalMin || '';
     navUI();
     $('#s_shuffleOpts').checked = s.shuffleOpts !== false; $('#s_same').checked = !!s.sameForAll; $('#s_showScore').checked = s.showScore !== false;
@@ -283,6 +287,7 @@
       scorePolicy: $('#s_policy').value, showReview: $('#s_review').checked, requireApp: $('#s_requireApp').checked,
       navMode: $('#s_nav').value, freeTime: $('#s_ftime').value, totalMin: +$('#s_tmin').value || 0,
       audioPlays: $('#s_plays') ? +$('#s_plays').value : 1, toeic: $('#s_toeic') ? $('#s_toeic').checked : false,
+      bkAuto: $('#s_bkAuto') ? $('#s_bkAuto').checked : true, bkLockL: $('#s_bkLockL') ? $('#s_bkLockL').checked : false, bkLockSec: $('#s_bkLockSec') ? $('#s_bkLockSec').checked : false,
       shuffleOpts: $('#s_shuffleOpts').checked, sameForAll: $('#s_same').checked, showScore: $('#s_showScore').checked,
       fullscreen: $('#s_full').checked, requireMssv: $('#s_mssv').checked,
       roster: $('#s_roster').value.split(/\r?\n/).map(x => x.replace(/\t/g, ' ').trim()).filter(Boolean), note: $('#s_note').value.trim(),
@@ -351,7 +356,7 @@
     const ebanks = used.map(id => {
       const b = banks.find(x => x.id === id);
       const eb = { name: b.name, groups: b.groups || [], audio: b.audio || {}, questions: b.questions.map(q => ({ type: q.type, stem: q.stem, options: q.options, correct: q.correct, pin: q.pin, answer: q.answer, blanks: q.blanks, sec: q.sec, pts: q.pts, skill: q.skill, g: q.g, audio: q.audio, rec: q.rec, num: q.num, part: q.part, page: q.page, disabled: !!q.disabled || !QuizCore.usable(q) })) };
-      if (b.book) eb.book = { parts: b.book.parts || {}, partsTxt: b.book.partsTxt, pages: b.book.pages.map(p => ({ id: p.id, sec: p.sec, n: p.n, w: p.w, h: p.h, first: p.first })) };
+      if (b.book) eb.book = { parts: b.book.parts || {}, marks: b.book.marks || null, partsTxt: b.book.partsTxt, pages: b.book.pages.map(p => ({ id: p.id, sec: p.sec, n: p.n, w: p.w, h: p.h, first: p.first })) };
       return eb;
     });
     const info = Object.assign({}, draft.info, { loai: loaiText(draft.info) });
@@ -664,8 +669,9 @@
   const bookCtx = {
     modal, closeModal, needConn, saveBanks, audioPanel, bindAudioPanel,
     api: (body) => api(conf().api, Object.assign({ key: conf().key }, body), 1),
-    created: async (bank) => {
+    created: async (bank, opt) => {
       banks.push(bank); await saveBanks();
+      if (opt && opt.quiet) return; // nạp nhiều đề một lần: không hỏi thay bài thi đang soạn
       const ks = ['L', 'R', 'S'].filter(k => bank.questions.some(q => q.skill === k));
       const spk = ks.length === 1 && ks[0] === 'S';
       const mins = spk ? Math.max(10, Math.ceil(bank.questions.reduce((s, q) => s + (q.rec || 60) + (q.prep || 0) + 20, 0) / 60)) : ks.length > 1 ? 120 : ks[0] === 'L' ? 45 : 75;

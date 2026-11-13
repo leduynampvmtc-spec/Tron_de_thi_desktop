@@ -143,6 +143,12 @@
           <div style="display:flex;flex-direction:column;justify-content:center;gap:6px">
             <label class="check"><input type="checkbox" id="s_toeic"> Hiện điểm quy đổi TOEIC (tham khảo)</label>
             <div class="hint">Nghe 5–495, Đọc 5–495 (quy đổi tuyến tính theo tỉ lệ đúng), Viết / Nói 0–200. Điểm thang 10 vẫn giữ để nhập KQHT.</div></div>
+          <div style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 22px;border-top:1px dashed var(--line);padding-top:8px">
+            <b style="width:100%;font-size:.9rem">Đề TOEIC nguyên bộ (học sinh xem trang đề gốc):</b>
+            <label class="check"><input type="checkbox" id="s_bkAuto" checked> Tự lật trang theo file nghe (hết câu ở trang → sang trang có câu tiếp theo)</label>
+            <label class="check"><input type="checkbox" id="s_bkLockL"> Phần Nghe: không cho quay lại trang đã qua</label>
+            <label class="check"><input type="checkbox" id="s_bkLockSec"> Sang phần Đọc thì không quay lại phần Nghe</label>
+          </div>
           <div class="hint" style="align-self:center">Bài có phần <b>Nói</b>: học sinh cần micro (điện thoại / laptop có sẵn) và bấm <b>Cho phép</b> khi trình duyệt hỏi quyền micro. Bản ghi âm lưu trong Google Drive của thầy/cô (thư mục TronDeThi_GhiAm).</div>
         </div>
       </div>
@@ -248,7 +254,7 @@
 
 <div class="modal-bg" id="modal"><div class="modal" id="modalBody"></div></div>
 
-<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.9</span></div></footer>
+<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v2.0</span></div></footer>
 
 <script src="js/config.js"></script>
 <script src="js/common.js"></script>

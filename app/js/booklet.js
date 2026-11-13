@@ -121,7 +121,7 @@
   }
   /* v1.9 — file nén chứa nhiều đề (Test 01 … Test 10): nhận diện và cho chọn từng Test */
   const ZIP_OK = (name) => ['pdf', 'docx', 'txt', 'csv', 'zip'].concat(AUD_EXT, IMG_EXT).includes(extOf(name));
-  const testOf = (path) => { const m = String(path).match(/test[\s_\-]*0*(\d{1,2})(?!\d)/ig); if (!m) return 0; const n = +m[m.length - 1].replace(/\D+/g, ''); return n >= 1 && n <= 99 ? n : 0; };
+  const testOf = (path) => { const s = String(path); let m = s.match(/test[\s_\-]*0*(\d{1,2})(?!\d)/ig); if (!m) { const k = s.match(/(?:^|[^a-z0-9])T0*(\d{1,2})[-_]\d/i); return k ? +k[1] : 0; } const n = +m[m.length - 1].replace(/\D+/g, ''); return n >= 1 && n <= 99 ? n : 0; };
   const SKIP_PATH = /(^|\/)(__MACOSX|\.DS_Store)|tr[aắ]c[\s_]*nghi[eệ]m[\s_]*c[oó][\s_]*ch[uữ]/i;
   let lastMulti = null; // giữ file nén nhiều đề để nạp tiếp đề khác không cần chọn lại
   async function openMulti(file) {
@@ -136,7 +136,27 @@
     });
     return { name: file.name, z, groups, book, scan: {}, tests: Object.keys(groups).map(Number).sort((a, b) => a - b), done: {} };
   }
+  /** Chọn thẳng nhiều file / cả thư mục (không nén) có nhiều Test */
+  function multiFromFiles(files) {
+    const groups = {}, book = [];
+    files.forEach(f => {
+      const path = f.webkitRelativePath || f._path || f.name;
+      if (SKIP_PATH.test(path) || !ZIP_OK(f.name) || extOf(f.name) === 'zip') return;
+      const n = testOf(path);
+      if (!n) { if (extOf(f.name) === 'pdf' && !isTranscript(f.name) && !isKeyPdf(f.name)) book.push(f); return; }
+      (groups[n] || (groups[n] = { files: [] })).files.push(f);
+    });
+    const tests = Object.keys(groups).map(Number).sort((a, b) => a - b);
+    if (tests.length < 2) return null;
+    const top = (files[0].webkitRelativePath || '').split('/')[0];
+    return { name: top || (files.length + ' file đã chọn'), files: true, groups, book, scan: {}, tests, done: {} };
+  }
   async function extractTest(mz, n) {
+    if (mz.files) {
+      const out = mz.groups[n].files.map(f => { f._path = f.webkitRelativePath || f._path || f.name; return f; });
+      if (!out.some(f => extOf(f.name) === 'pdf' && !isKeyPdf(f.name))) mz.book.forEach(f => { f._bookTest = n; f._bookKey = f.webkitRelativePath || f.name; out.push(f); });
+      return out;
+    }
     const g = mz.groups[n], out = [];
     const take = async (z, name, extra) => { const data = await z.blob(name); if (data) { const f = new File([data], baseName(name), { type: MIME[extOf(name)] || '' }); f._path = name; if (extra) Object.assign(f, extra); out.push(f); } };
     const own = g.loose.some(x => extOf(x) === 'pdf' && !isKeyPdf(baseName(x)));
@@ -339,6 +359,15 @@
     }
     return new Blob(bufs, { type: 'audio/mpeg' });
   }
+  /** Thời lượng (giây) của 1 file nghe */
+  function audioDur(file) {
+    return new Promise(res => {
+      const a = new Audio(), u = URL.createObjectURL(file); let done = false;
+      const fin = (v) => { if (done) return; done = true; URL.revokeObjectURL(u); res(v); };
+      a.preload = 'metadata'; a.onloadedmetadata = () => fin(isFinite(a.duration) ? a.duration : 0); a.onerror = () => fin(0);
+      setTimeout(() => fin(0), 10000); a.src = u;
+    });
+  }
   /** File "câu đầu mỗi trang": dòng "LC …: ,1,3,5" và "RC …: 101,109" */
   function parseFirstLists(txt) {
     const out = {};
@@ -356,8 +385,9 @@
       const km = parseKey(st.keyText), kn = Object.keys(km).length;
       ctx.modal('<div class="row"><h2 style="margin:0">Nạp đề TOEIC nguyên bộ</h2><span class="spacer"></span><button class="btn sm" id="bkClose">Đóng</button></div>' +
         '<p class="hint">Dùng cho bộ đề TOEIC / ETS có sẵn: <b>file PDF đề</b> (LC, RC), <b>đáp án</b> và <b>file nghe theo Part</b>. Học sinh xem đúng trang đề gốc trên điện thoại/máy tính, chọn đáp án ở phiếu trả lời ngay dưới trang đề, file nghe tự phát lần lượt Part 1 → 4. Có thể chọn thẳng file <b>.zip</b> của bộ đề. <b>Mới:</b> chọn thêm file <b>KEY / SCRIPT AND KEY (.pdf)</b> — phần mềm tự đọc đáp án, không phải gõ; file <b>TRANSCRIPT</b> tự bỏ qua; file nghe từng câu tự gộp theo Part; sách nhiều Test thì điền <b>Trang … – …</b> để lấy riêng từng Test.</p>' +
-        '<label class="drop" id="bkDrop" for="bkIn"><b>Kéo thả hoặc bấm để chọn file</b> — .zip bộ đề, hoặc các file .pdf, .mp3, file đáp án (.docx / .txt / ảnh)<div class="hint">Chọn được nhiều file cùng lúc.</div></label><input type="file" id="bkIn" class="hide" multiple accept=".zip,.pdf,.docx,.txt,.csv,audio/*,image/*,.mp3,.m4a,.wav">' +
-        (lastMulti ? '<div class="msg info multi"><b>' + esc(lastMulti.name) + '</b> có <b>' + lastMulti.tests.length + ' đề</b> — chọn đề cần nạp (mỗi lần 1 đề; nạp xong mở lại sẽ chọn tiếp đề khác):<div class="mtests">' + lastMulti.tests.map(n => '<button class="btn sm' + (st.curTest === n ? ' primary' : '') + '" data-mt="' + n + '">Test ' + String(n).padStart(2, '0') + (lastMulti.done[n] ? ' ✓' : '') + '</button>').join('') + '</div></div>' : '') +
+        '<label class="drop" id="bkDrop" for="bkIn"><b>Kéo thả hoặc bấm để chọn file</b> — .zip bộ đề, hoặc các file .pdf, .mp3, file đáp án (.docx / .txt / ảnh)<div class="hint">Chọn được nhiều file cùng lúc.</div></label><input type="file" id="bkIn" class="hide" multiple accept=".zip,.pdf,.docx,.txt,.csv,audio/*,image/*,.mp3,.m4a,.wav"><div class="hint" style="margin-top:4px">Hoặc <label for="bkDir" style="display:inline;margin:0;font-weight:600;color:var(--brand-2);text-decoration:underline;cursor:pointer">chọn cả một thư mục</label> (vd thư mục ETS 2026 PUBLIC có nhiều Test).</div><input type="file" id="bkDir" class="hide" webkitdirectory multiple>' +
+        (lastMulti ? '<div class="msg info multi"><b>' + esc(lastMulti.name) + '</b> có <b>' + lastMulti.tests.length + ' đề</b> — chọn đề cần nạp (mỗi lần 1 đề; nạp xong mở lại sẽ chọn tiếp đề khác):<div class="mtests">' + lastMulti.tests.map(n => '<button class="btn sm' + (st.curTest === n ? ' primary' : '') + '" data-mt="' + n + '">Test ' + String(n).padStart(2, '0') + (lastMulti.done[n] ? ' ✓' : '') + '</button>').join('') + '</div>' +
+          (lastMulti.tests.every(n => lastMulti.done[n]) ? '<div class="hint" style="margin-top:8px">Đã nạp xong tất cả các đề trong file này.</div>' : '<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button class="btn primary" id="bkAll">⚡ Nạp tất cả ' + lastMulti.tests.filter(n => !lastMulti.done[n]).length + ' đề' + (lastMulti.tests.some(n => lastMulti.done[n]) ? ' còn lại' : '') + ' một lần</button><span class="hint">Mỗi Test thành 1 ngân hàng riêng: tự tìm trang, đáp án, file nghe rồi lưu lên Drive (khoảng 1–2 phút / đề). Để nguyên cửa sổ đến khi xong.</span></div>') + '<div id="bkBatch"></div></div>' : '') +
         '<div id="bkMsg">' + st.msgs.map(m => '<div class="msg ' + m[0] + '">' + m[1] + '</div>').join('') + '</div>' +
         (st.pdfs.length || st.auds.length ? '<div class="grid g2" style="margin-top:10px">' +
           '<div><h3 style="margin:4px 0">📄 File đề PDF</h3>' + (st.pdfs.length ? '<table class="tbl">' + st.pdfs.map((p, i) => '<tr data-pi="' + i + '"><td>' + esc(p.file.name) + '<div class="hint">' + (p.all ? 'File có ' + p.all + ' trang' + (p.count && p.count !== p.all ? ' — lấy ' + p.count + ' trang' : '') : '') + '</div></td><td>' + secSel(p.sec) + '<div class="pgrange">Trang <input type="number" min="1" data-pfrom value="' + esc(p.from || '') + '" placeholder="đầu"> – <input type="number" min="1" data-pto value="' + esc(p.to || '') + '" placeholder="cuối"></div></td></tr>').join('') + '</table><div class="hint">Sách có nhiều Test: điền <b>từ trang … đến trang …</b> để lấy riêng Test 1, Test 2… (bỏ trống = lấy cả file).</div>' : '<div class="msg warn">Chưa có file PDF đề.</div>') + '</div>' +
@@ -380,6 +410,8 @@
       });
       const inp = $('#bkIn');
       inp.onchange = () => { addFiles(Array.from(inp.files)); inp.value = ''; };
+      const dirIn = $('#bkDir'); if (dirIn) dirIn.onchange = () => { addFiles(Array.from(dirIn.files)); dirIn.value = ''; };
+      if ($('#bkAll')) $('#bkAll').onclick = runBatch;
       const dz = $('#bkDrop');
       dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
       dz.addEventListener('dragleave', () => dz.classList.remove('over'));
@@ -433,6 +465,7 @@
         }
         else list.push(f);
       }
+      if (!fromMulti && list.length > 3) { const mf = multiFromFiles(list); if (mf) { lastMulti = mf; st.msgs = []; render(); return; } }
       // file .txt (đáp án chuẩn, câu đầu mỗi trang) đọc trước, file KEY chỉ điền phần còn thiếu
       list.sort((a, b) => (/^(txt|csv)$/.test(extOf(a.name)) ? 0 : 1) - (/^(txt|csv)$/.test(extOf(b.name)) ? 0 : 1));
       for (const f of list) {
@@ -524,7 +557,7 @@
       render();
     }
     async function renderAll() {
-      const btn = $('#bkRender'); btn.disabled = true;
+      const btn = $('#bkRender') || {}; btn.disabled = true;
       st.pages = [];
       try {
         for (const p of st.pdfs) {
@@ -536,7 +569,7 @@
           }, { from: p.from, to: p.to });
           p.count = cnt;
         }
-      } catch (e) { toast('Không đọc được PDF: ' + e.message, 'bad'); btn.disabled = false; return; }
+      } catch (e) { toast('Không đọc được PDF: ' + e.message, 'bad'); btn.disabled = false; return false; }
       const parts = parseParts(st.partsTxt || STD_PARTS);
       autoFirst(st.pages, (n, sec) => { const pt = partOf(parts, n); return pt > 0 && (sec === 'LR' || skillOfPart(pt) === sec); });
       if (st.firstLists) ['L', 'R'].forEach(sec => {
@@ -545,6 +578,10 @@
         ps.forEach((p, i) => { if (i < fl.length) p.first = fl[i]; });
         if (fl.length !== ps.length) toast('Dòng câu đầu ' + (sec === 'L' ? 'LC' : 'RC') + ' có ' + fl.length + ' số nhưng đề có ' + ps.length + ' trang — kiểm tra lại số trang', 'warn');
       });
+      { // đề LC 12 trang (bố cục sách ETS chuẩn) chưa có số câu đầu nào → điền sẵn, thầy cô kiểm tra lại
+        const ps = st.pages.filter(p => p.sec === 'L');
+        if (ps.length === 12 && ps.every(p => p.first == null)) { [null, 1, 3, 5, 7, 32, 44, 56, 65, 71, 83, 95].forEach((v, i) => { ps[i].first = v; }); st.lcDefault = true; }
+      }
       st.rendered = true;
       render();
       const pr = $('#bkProg'); if (pr) pr.textContent = 'Đã đọc ' + st.pages.length + ' trang.';
@@ -570,14 +607,14 @@
       $$('[data-first]', box).forEach(inp => inp.onchange = () => { const v = inp.value.trim(); st.pages[+inp.dataset.first].first = v ? +v : null; pagesUI(); });
       bindQuick(box, st.pages, pagesUI);
       $$('[data-zoom]', box).forEach(img => img.onclick = () => { const p = st.pages[+img.dataset.zoom]; window.open(URL.createObjectURL(p.blob), '_blank'); });
-      $('#bkSave').onclick = save;
+      $('#bkSave').onclick = () => save();
     }
-    async function save() {
-      if (!ctx.needConn()) return;
+    async function save(batch) {
+      if (!batch && !ctx.needConn()) return false;
       const km = parseKey(st.keyText), parts = parseParts(st.partsTxt || STD_PARTS);
       const nums = Object.keys(km).map(Number).filter(n => partOf(parts, n)).sort((a, b) => a - b);
-      const btn = $('#bkSave'); btn.disabled = true;
-      const up = (t) => { const e = $('#bkUp'); if (e) e.textContent = t; };
+      const btn = $('#bkSave') || {}; btn.disabled = true;
+      const up = (t) => { const e = $('#bkUp'); if (e) e.textContent = t; if (batch) batch(t); };
       const bank = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: (st.name || 'Đề TOEIC').trim(), file: st.pdfs.map(p => p.file.name).join(', '), addedAt: Date.now(), groups: [], audio: {}, questions: [],
         book: { parts: {}, partsTxt: st.partsTxt || STD_PARTS, pages: st.pages.map(p => ({ id: null, sec: p.sec, file: p.file, n: p.n, w: p.w, h: p.h, first: p.first, thumb: p.thumb })) } };
       try {
@@ -603,7 +640,12 @@
         for (const pt of ['1', '2', '3', '4', 'all']) {
           const g = st.auds.filter(a => a.part === pt);
           if (g.length === 1) list.push(g[0]);
-          else if (g.length > 1) { up('Đang gộp ' + g.length + ' file nghe Part ' + pt + '…'); const b = await joinMp3(g.sort((x, y) => x.num - y.num || x.file.name.localeCompare(y.file.name))); list.push({ part: pt, file: new File([b], (bank.name.replace(/[^\w\- ]+/g, '').slice(0, 40) || 'TOEIC') + ' - Part ' + pt + '.mp3', { type: 'audio/mpeg' }) }); }
+          else if (g.length > 1) {
+            up('Đang gộp ' + g.length + ' file nghe Part ' + pt + '…');
+            g.sort((x, y) => x.num - y.num || x.file.name.localeCompare(y.file.name));
+            // mốc thời gian của từng đoạn nghe → học sinh được tự lật trang khi sang đoạn có câu ở trang sau
+            if (g.every(a => a.num)) { let tt = 0; const mk = []; for (const a of g) { mk.push({ n: a.num, t: Math.round(tt * 10) / 10 }); const d = await audioDur(a.file); if (!d) { mk.length = 0; break; } tt += d; } if (mk.length) (bank.book.marks = bank.book.marks || {})[pt] = mk; }
+            const b = await joinMp3(g.map(a => a.file)); list.push({ part: pt, file: new File([b], (bank.name.replace(/[^\w\- ]+/g, '').slice(0, 40) || 'TOEIC') + ' - Part ' + pt + '.mp3', { type: 'audio/mpeg' }) }); }
         }
         for (const a of list) {
           if (!a.part) continue;
@@ -613,7 +655,7 @@
           bank.audio[a.file.name] = { id: r.id, name: a.file.name, size: a.file.size };
           bank.book.parts[a.part] = a.file.name;
         }
-      } catch (e) { up(''); toast('Tải lên chưa xong: ' + e.message + ' — bấm lưu lại để thử tiếp', 'bad'); btn.disabled = false; return; }
+      } catch (e) { up(''); if (batch) throw e; toast('Tải lên chưa xong: ' + e.message + ' — bấm lưu lại để thử tiếp', 'bad'); btn.disabled = false; return false; }
       bank.questions = nums.map(n => {
         const pt = partOf(parts, n), nOpt = pt === 2 ? 3 : 4, c = km[n];
         const q = { n, num: n, type: 'mc', stem: '', text: '', options: Array(nOpt).fill(''), correct: c >= 0 && c < nOpt ? [c] : [], skill: skillOfPart(pt), part: pt, pts: null };
@@ -622,10 +664,40 @@
       });
       assignPages(bank);
       up('');
-      ctx.created(bank);
+      await ctx.created(bank, batch ? { quiet: true } : null);
       if (lastMulti && st.curTest) lastMulti.done[st.curTest] = true;
+      if (batch) return bank;
       ctx.closeModal();
       toast('Đã nạp đề "' + bank.name + '": ' + bank.questions.length + ' câu, ' + bank.book.pages.length + ' trang đề', 'ok');
+      return bank;
+    }
+    /** Nạp lần lượt mọi Test trong file nén / thư mục: mỗi Test = 1 ngân hàng */
+    async function runBatch() {
+      if (!lastMulti || !ctx.needConn()) return;
+      const todo = lastMulti.tests.filter(n => !lastMulti.done[n]);
+      const report = [];
+      const box = () => $('#bkBatch');
+      const show = (cur) => { const b = box(); if (b) b.innerHTML = '<div class="batchrep">' + report.map(r => '<div class="msg ' + r[0] + '">' + r[1] + '</div>').join('') + (cur ? '<div class="msg info">⏳ ' + cur + '</div>' : '') + '</div>'; };
+      for (let k = 0; k < todo.length; k++) {
+        const n = todo[k], T = 'Test ' + String(n).padStart(2, '0');
+        Object.assign(st, { pdfs: [], auds: [], keyImgs: [], keyText: '', name: '', pages: [], rendered: false, firstLists: null, msgs: [], curTest: n, ansBlocks: {}, ansTest: 0, lcDefault: false });
+        render(); show(T + ' (' + (k + 1) + '/' + todo.length + '): đang lấy file…');
+        try {
+          await addFiles(await extractTest(lastMulti, n), true); show(T + ': đang đọc trang đề…');
+          if (!st.pdfs.length) throw new Error('không có file PDF đề');
+          if ((await renderAll()) === false) throw new Error('không đọc được PDF');
+          const km = parseKey(st.keyText), nk = Object.keys(km).filter(q => q >= 1 && q <= 200).length;
+          const bank = await save((t) => show(T + ': ' + (t || 'đang lưu…')));
+          const parts = Object.keys(bank.book.parts).length;
+          const noMap = ['L', 'R'].filter(s => bank.book.pages.some(p => p.sec === s) && !bank.book.pages.some(p => p.sec === s && p.first != null));
+          const warn = nk < 200 || noMap.length || (!parts && st.pdfs.some(p => p.sec !== 'R'));
+          report.push([warn ? 'warn' : 'ok', '<b>' + T + '</b> → "' + esc(bank.name) + '": ' + bank.book.pages.length + ' trang, ' + nk + '/200 đáp án' + (nk < 200 ? ' <b>(thiếu ' + (200 - nk) + ' — mở ngân hàng để gõ thêm)</b>' : '') + ', file nghe ' + (parts ? parts + ' Part' : '<b>chưa có</b>') + (st.lcDefault ? ', câu đầu trang LC điền theo bố cục ETS chuẩn' : '') + (noMap.length ? ', <b>chưa có số câu đầu mỗi trang ' + noMap.map(s => s === 'L' ? 'LC' : 'RC').join(', ') + '</b> (mở ngân hàng, điền ô “câu đầu mỗi trang” — vd RC: 101, 109, 121…)' : '') + '.']);
+        } catch (e) { report.push(['bad', '<b>' + T + '</b>: chưa nạp được — ' + esc(e.message) + ' (bấm Nạp tất cả để thử lại các đề còn lại).']); }
+        show(k + 1 < todo.length ? 'chuẩn bị đề tiếp theo…' : '');
+      }
+      const okN = report.filter(r => r[0] !== 'bad').length;
+      Object.assign(st, { pdfs: [], auds: [], keyText: '', pages: [], rendered: false, msgs: [['ok', 'Đã nạp xong <b>' + okN + '/' + todo.length + '</b> đề. Các ngân hàng đã có trong danh sách “Ngân hàng đã nạp”; sang tab <b>2. Tạo đề &amp; link</b> để tạo bài thi cho từng đề.']], curTest: 0 });
+      render(); show(''); toast('Đã nạp ' + okN + '/' + todo.length + ' đề', okN === todo.length ? 'ok' : 'warn');
     }
     render();
   }
