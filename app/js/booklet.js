@@ -50,22 +50,184 @@
   function blobB64(b) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(b); }); }
   const extOf = (n) => (String(n).match(/\.([a-z0-9]+)$/i) || ['', ''])[1].toLowerCase();
   const AUD_EXT = ['mp3', 'm4a', 'wav', 'ogg', 'aac', 'wma', 'oga', 'webm'];
-  const IMG_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
-  const MIME = { mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', aac: 'audio/aac', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf' };
+  const IMG_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif'];
+  const MIME = { heic: 'image/heic', heif: 'image/heif', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', aac: 'audio/aac', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf' };
   const baseName = (n) => String(n).split('/').pop();
 
+  /** Đọc .zip theo từng phần (không nạp cả file vào bộ nhớ) — dùng được file nén lớn như cả cuốn sách 1–2 GB */
+  async function zipOpen(blob) {
+    const size = blob.size, tailLen = Math.min(size, 70000);
+    const tail = new Uint8Array(await blob.slice(size - tailLen).arrayBuffer());
+    const dt = new DataView(tail.buffer);
+    let e = -1;
+    for (let i = tail.length - 22; i >= 0; i--) if (dt.getUint32(i, true) === 0x06054b50) { e = i; break; }
+    if (e < 0) throw new Error('không phải file .zip hợp lệ');
+    let n = dt.getUint16(e + 10, true), cdSize = dt.getUint32(e + 12, true), cdOff = dt.getUint32(e + 16, true);
+    if (cdOff === 0xffffffff || n === 0xffff) { // ZIP64
+      const l = e - 20; if (l >= 0 && dt.getUint32(l, true) === 0x07064b50) {
+        const z64 = Number(dt.getBigUint64(l + 8, true));
+        const r = new DataView(await blob.slice(z64, z64 + 56).arrayBuffer());
+        n = Number(r.getBigUint64(32, true)); cdSize = Number(r.getBigUint64(40, true)); cdOff = Number(r.getBigUint64(48, true));
+      }
+    }
+    const cd = new Uint8Array(await blob.slice(cdOff, cdOff + cdSize).arrayBuffer()), dv = new DataView(cd.buffer);
+    const td = new TextDecoder('utf-8'), files = {};
+    let p = 0;
+    for (let k = 0; k < n && p + 46 <= cd.length; k++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) break;
+      const method = dv.getUint16(p + 10, true);
+      let csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true);
+      const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+      let lho = dv.getUint32(p + 42, true);
+      if (csize === 0xffffffff || usize === 0xffffffff || lho === 0xffffffff) { // trường ZIP64 mở rộng
+        let q = p + 46 + nlen; const qe = q + xlen;
+        while (q + 4 <= qe) {
+          const id = dv.getUint16(q, true), sz = dv.getUint16(q + 2, true); let r = q + 4;
+          if (id === 1) { if (usize === 0xffffffff) { usize = Number(dv.getBigUint64(r, true)); r += 8; } if (csize === 0xffffffff) { csize = Number(dv.getBigUint64(r, true)); r += 8; } if (lho === 0xffffffff) lho = Number(dv.getBigUint64(r, true)); }
+          q += 4 + sz;
+        }
+      }
+      const name = td.decode(cd.subarray(p + 46, p + 46 + nlen)).normalize('NFC');
+      files[name] = { method, csize, lho };
+      p += 46 + nlen + xlen + clen;
+    }
+    return {
+      names: Object.keys(files),
+      async blob(name) {
+        const f = files[name]; if (!f) return null;
+        const h = new DataView(await blob.slice(f.lho, f.lho + 30).arrayBuffer());
+        const start = f.lho + 30 + h.getUint16(26, true) + h.getUint16(28, true);
+        const data = blob.slice(start, start + f.csize);
+        if (f.method === 0) return data;
+        if (f.method === 8) return new Response(data.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();
+        throw new Error('kiểu nén không hỗ trợ: ' + f.method);
+      }
+    };
+  }
   /** Giải nén .zip (bộ đề tải về) thành danh sách file */
   async function unzipAll(file) {
-    const z = await QuizDocx.readZip(await file.arrayBuffer());
+    const z = await zipOpen(file);
     const out = [];
     for (const name of z.names) {
       if (/\/$/.test(name) || /(^|\/)(__MACOSX|\.DS_Store)/.test(name)) continue;
       const ext = extOf(name);
       if (!['pdf', 'docx', 'txt', 'csv'].concat(AUD_EXT, IMG_EXT).includes(ext)) continue;
-      const data = await z.get(name); if (!data) continue;
-      out.push(new File([data], baseName(name), { type: MIME[ext] || '' }));
+      if (/\._/.test(baseName(name))) continue;
+      if (ext === 'pdf' && isTranscript(name)) continue;
+      const data = await z.blob(name); if (!data) continue;
+      const f = new File([data], baseName(name), { type: MIME[ext] || '' }); f._path = name; out.push(f);
     }
     return out;
+  }
+  /* v1.9 — file nén chứa nhiều đề (Test 01 … Test 10): nhận diện và cho chọn từng Test */
+  const ZIP_OK = (name) => ['pdf', 'docx', 'txt', 'csv', 'zip'].concat(AUD_EXT, IMG_EXT).includes(extOf(name));
+  const testOf = (path) => { const m = String(path).match(/test[\s_\-]*0*(\d{1,2})(?!\d)/ig); if (!m) return 0; const n = +m[m.length - 1].replace(/\D+/g, ''); return n >= 1 && n <= 99 ? n : 0; };
+  const SKIP_PATH = /(^|\/)(__MACOSX|\.DS_Store)|tr[aắ]c[\s_]*nghi[eệ]m[\s_]*c[oó][\s_]*ch[uữ]/i;
+  let lastMulti = null; // giữ file nén nhiều đề để nạp tiếp đề khác không cần chọn lại
+  async function openMulti(file) {
+    const z = await zipOpen(file);
+    const groups = {}, book = [];
+    z.names.forEach(name => {
+      if (/\/$/.test(name) || SKIP_PATH.test(name) || !ZIP_OK(name)) return;
+      const n = testOf(name);
+      if (!n) { if (extOf(name) === 'pdf' && !isTranscript(name) && !isKeyPdf(baseName(name))) book.push(name); return; }
+      const g = groups[n] || (groups[n] = { loose: [], zips: [] });
+      (extOf(name) === 'zip' ? g.zips : g.loose).push(name);
+    });
+    return { name: file.name, z, groups, book, scan: {}, tests: Object.keys(groups).map(Number).sort((a, b) => a - b), done: {} };
+  }
+  async function extractTest(mz, n) {
+    const g = mz.groups[n], out = [];
+    const take = async (z, name, extra) => { const data = await z.blob(name); if (data) { const f = new File([data], baseName(name), { type: MIME[extOf(name)] || '' }); f._path = name; if (extra) Object.assign(f, extra); out.push(f); } };
+    const own = g.loose.some(x => extOf(x) === 'pdf' && !isKeyPdf(baseName(x)));
+    if (own || !g.zips.length) { for (const nm of g.loose) await take(mz.z, nm); }
+    if (!own) for (const zn of g.zips) {
+      const inner = await zipOpen(await mz.z.blob(zn));
+      for (const nm of inner.names) if (!/\/$/.test(nm) && !SKIP_PATH.test(nm) && ZIP_OK(nm) && extOf(nm) !== 'zip') await take(inner, nm);
+    }
+    // sách nguyên cuốn (LC.pdf, RC.pdf không ghi số Test): lấy kèm, phần mềm tự tìm trang của Test n
+    if (!out.some(f => extOf(f.name) === 'pdf' && !isKeyPdf(f.name))) for (const nm of mz.book) await take(mz.z, nm, { _bookTest: n, _bookKey: nm });
+    return out;
+  }
+  /** Tìm trang của từng Test trong cuốn sách scan: trang bìa / trang cuối có nền xám ở mép, trang đề có mép trắng.
+   *  Trả về [[từ, đến], …] theo thứ tự Test 1, 2, … (mỗi đoạn ≥ 8 trang liền nhau) */
+  async function scanBook(file, onProg) {
+    const lib = await pdfLib();
+    const task = lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+    const doc = await task.promise, kind = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i), vp1 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: 60 / vp1.width });
+      const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+      await page.render({ canvasContext: c, viewport: vp }).promise;
+      const W = cv.width, H = cv.height, d = c.getImageData(0, 0, W, H).data;
+      let bs = 0, bn = 0, s = 0, s2 = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const k = (y * W + x) * 4, v = (d[k] * 299 + d[k + 1] * 587 + d[k + 2] * 114) / 1000;
+        s += v; s2 += v * v; if (x < 4 || x >= W - 4 || y < 4 || y >= H - 4) { bs += v; bn++; }
+      }
+      const m = s / (W * H), sd = Math.sqrt(Math.max(0, s2 / (W * H) - m * m));
+      kind.push(bs / bn < 245 ? 'g' : sd < 6 ? 'b' : 'c');
+      page.cleanup(); if (onProg) onProg(i, doc.numPages);
+    }
+    try { task.destroy(); } catch (e) { /* bỏ qua */ }
+    const runs = []; let a = 0, z = 0;
+    for (let i = 0; i <= kind.length; i++) {
+      const k = i < kind.length ? kind[i] : 'g';
+      if (k === 'c') { if (!a) a = i + 1; z = i + 1; }
+      else if (k === 'g') { if (a) { if (z - a + 1 >= 8) runs.push([a, z]); else if (runs.length) (runs.extra = runs.extra || []).push([a, z]); } a = 0; }
+    }
+    // các trang lẻ sau Test cuối (thường là trang ĐÁP ÁN): đọc bảng đáp án dạng ảnh
+    runs.extra = (runs.extra || []).filter(r => r[0] > runs[runs.length - 1][1]);
+    return runs;
+  }
+  /* ---- Bảng đáp án dạng ảnh scan (trang ANSWERS) ---- */
+  const secOfName = (n) => /(^|[^a-z])(lc|listening|nghe)/i.test(n) ? 'L' : /(^|[^a-z])(rc|reading|đọc|doc)([^a-z]|$)/i.test(n) ? 'R' : '';
+  async function pageImage(page, width) {
+    const vp1 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: width / vp1.width });
+    const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: c, viewport: vp }).promise;
+    return c.getImageData(0, 0, cv.width, cv.height);
+  }
+  /** Đọc lại ở nhiều độ phân giải, bù các ô chưa nhận được ('?') */
+  async function readMulti(getImg) {
+    let bl = null;
+    for (const w of [2448, 1836, 1500]) {
+      const b2 = QuizAnsKey.readPage(await getImg(w));
+      if (!bl) bl = b2;
+      else if (b2.length === bl.length) bl.forEach((x, k) => { if (b2[k].letters.length === x.letters.length) x.letters = x.letters.split('').map((ch, j) => ch === '?' ? b2[k].letters[j] : ch).join(''); });
+      if (!bl.length || !bl.some(x => x.letters.includes('?'))) break;
+    }
+    return bl || [];
+  }
+  /** Đọc các khung đáp án trên trang PDF (pages = [từ, đến] hoặc bỏ trống = cả file) → ['DACB…', …] theo thứ tự Test */
+  async function readAnswerPdf(file, range) {
+    if (!window.QuizAnsKey) return [];
+    const lib = await pdfLib();
+    const task = lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+    const doc = await task.promise, out = [];
+    const a = range ? range[0] : 1, b = range ? range[1] : doc.numPages;
+    for (let i = a; i <= Math.min(b, doc.numPages); i++) {
+      const page = await doc.getPage(i);
+      const bl = await readMulti((w) => pageImage(page, w));
+      bl.forEach(x => out.push(x));
+      page.cleanup();
+    }
+    try { task.destroy(); } catch (e) { /* bỏ qua */ }
+    return out;
+  }
+  async function readAnswerImage(file) {
+    if (!window.QuizAnsKey) return [];
+    try {
+      const bmp = await createImageBitmap(file);
+      const bl = await readMulti(async (w) => {
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = Math.round(bmp.height * w / bmp.width);
+        const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height); c.drawImage(bmp, 0, 0, cv.width, cv.height);
+        return c.getImageData(0, 0, cv.width, cv.height);
+      });
+      return bl;
+    } catch (e) { return null; } // null = trình duyệt không mở được ảnh (vd HEIC trên Chrome)
   }
   /** Lấy chữ + hình trong file đáp án .docx (đáp án thường là ảnh chụp bảng) */
   async function readKeyDocx(file) {
@@ -187,7 +349,7 @@
     return out;
   }
   function openImport(ctx) {
-    const st = { pdfs: [], auds: [], keyImgs: [], keyText: '', name: '', pages: [], rendered: false, firstLists: null, msgs: [] };
+    const st = { pdfs: [], auds: [], keyImgs: [], keyText: '', name: '', pages: [], rendered: false, firstLists: null, msgs: [], curTest: 0, ansBlocks: {}, ansTest: 0 };
     const partSel = (v) => '<select data-apart>' + [['1', 'Part 1'], ['2', 'Part 2'], ['3', 'Part 3'], ['4', 'Part 4'], ['all', 'Toàn bộ phần Nghe (1 file)'], ['', '— không dùng —']].map(o => '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
     const secSel = (v) => '<select data-psec>' + [['L', 'Phần Nghe (Listening)'], ['R', 'Phần Đọc (Reading)'], ['LR', 'Cả Nghe và Đọc']].map(o => '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + o[1] + '</option>').join('') + '</select>';
     const render = () => {
@@ -195,6 +357,7 @@
       ctx.modal('<div class="row"><h2 style="margin:0">Nạp đề TOEIC nguyên bộ</h2><span class="spacer"></span><button class="btn sm" id="bkClose">Đóng</button></div>' +
         '<p class="hint">Dùng cho bộ đề TOEIC / ETS có sẵn: <b>file PDF đề</b> (LC, RC), <b>đáp án</b> và <b>file nghe theo Part</b>. Học sinh xem đúng trang đề gốc trên điện thoại/máy tính, chọn đáp án ở phiếu trả lời ngay dưới trang đề, file nghe tự phát lần lượt Part 1 → 4. Có thể chọn thẳng file <b>.zip</b> của bộ đề. <b>Mới:</b> chọn thêm file <b>KEY / SCRIPT AND KEY (.pdf)</b> — phần mềm tự đọc đáp án, không phải gõ; file <b>TRANSCRIPT</b> tự bỏ qua; file nghe từng câu tự gộp theo Part; sách nhiều Test thì điền <b>Trang … – …</b> để lấy riêng từng Test.</p>' +
         '<label class="drop" id="bkDrop" for="bkIn"><b>Kéo thả hoặc bấm để chọn file</b> — .zip bộ đề, hoặc các file .pdf, .mp3, file đáp án (.docx / .txt / ảnh)<div class="hint">Chọn được nhiều file cùng lúc.</div></label><input type="file" id="bkIn" class="hide" multiple accept=".zip,.pdf,.docx,.txt,.csv,audio/*,image/*,.mp3,.m4a,.wav">' +
+        (lastMulti ? '<div class="msg info multi"><b>' + esc(lastMulti.name) + '</b> có <b>' + lastMulti.tests.length + ' đề</b> — chọn đề cần nạp (mỗi lần 1 đề; nạp xong mở lại sẽ chọn tiếp đề khác):<div class="mtests">' + lastMulti.tests.map(n => '<button class="btn sm' + (st.curTest === n ? ' primary' : '') + '" data-mt="' + n + '">Test ' + String(n).padStart(2, '0') + (lastMulti.done[n] ? ' ✓' : '') + '</button>').join('') + '</div></div>' : '') +
         '<div id="bkMsg">' + st.msgs.map(m => '<div class="msg ' + m[0] + '">' + m[1] + '</div>').join('') + '</div>' +
         (st.pdfs.length || st.auds.length ? '<div class="grid g2" style="margin-top:10px">' +
           '<div><h3 style="margin:4px 0">📄 File đề PDF</h3>' + (st.pdfs.length ? '<table class="tbl">' + st.pdfs.map((p, i) => '<tr data-pi="' + i + '"><td>' + esc(p.file.name) + '<div class="hint">' + (p.all ? 'File có ' + p.all + ' trang' + (p.count && p.count !== p.all ? ' — lấy ' + p.count + ' trang' : '') : '') + '</div></td><td>' + secSel(p.sec) + '<div class="pgrange">Trang <input type="number" min="1" data-pfrom value="' + esc(p.from || '') + '" placeholder="đầu"> – <input type="number" min="1" data-pto value="' + esc(p.to || '') + '" placeholder="cuối"></div></td></tr>').join('') + '</table><div class="hint">Sách có nhiều Test: điền <b>từ trang … đến trang …</b> để lấy riêng Test 1, Test 2… (bỏ trống = lấy cả file).</div>' : '<div class="msg warn">Chưa có file PDF đề.</div>') + '</div>' +
@@ -207,6 +370,14 @@
         '<div class="row" style="margin-top:12px"><button class="btn primary" id="bkRender"' + (st.pdfs.length ? '' : ' disabled') + '>' + (st.rendered ? 'Đọc lại file PDF' : 'Bước tiếp: đọc file PDF đề') + '</button><span class="hint" id="bkProg"></span></div>' +
         '<div id="bkPages"></div>');
       $('#bkClose').onclick = ctx.closeModal;
+      $$('[data-anstest]').forEach(s => s.onchange = () => { st.ansTest = +s.value || 0; Object.values(st.ansBlocks).forEach(ab => { ab.asked = true; }); applyAnsBook(); render(); });
+      $$('[data-mt]').forEach(b => b.onclick = async () => {
+        const n = +b.dataset.mt;
+        Object.assign(st, { pdfs: [], auds: [], keyImgs: [], keyText: '', name: '', pages: [], rendered: false, firstLists: null, msgs: [], curTest: n, ansBlocks: {}, ansTest: 0 });
+        render(); msg('info', 'Đang lấy Test ' + String(n).padStart(2, '0') + ' trong file nén…');
+        try { const files = await extractTest(lastMulti, n); await addFiles(files, true); }
+        catch (e) { msg('bad', 'Không lấy được Test ' + n + ': ' + esc(e.message)); }
+      });
       const inp = $('#bkIn');
       inp.onchange = () => { addFiles(Array.from(inp.files)); inp.value = ''; };
       const dz = $('#bkDrop');
@@ -226,13 +397,44 @@
       $('#bkRender').onclick = renderAll;
       if (st.rendered) pagesUI();
     };
+    /** Ghi nhận các khung đáp án đọc được: phần Nghe / Đọc theo số câu in trong khung (1… hay 101…), nếu không rõ thì theo tên file */
+    function addAnsBlocks(f, bl) {
+      const byName = f._sec || secOfName(f._path || f.name);
+      ['L', 'R'].forEach(sec => {
+        const mine = bl.filter(b => b.base ? (b.base === 101 ? 'R' : 'L') === sec : (byName || 'L') === sec);
+        if (!mine.length) return;
+        const prev = st.ansBlocks[sec];
+        st.ansBlocks[sec] = { blocks: (prev && prev.name !== f.name ? prev.blocks : []).concat(mine.map(b => b.letters)), name: f.name };
+      });
+    }
+    /** Gán bảng đáp án dạng ảnh cho đúng Test (nhiều khung = nhiều Test) */
+    function applyAnsBook() {
+      const test = st.curTest || st.ansTest || testOf(st.pdfs.map(p => p.file.name).join(' ')) || 0;
+      ['L', 'R'].forEach(sec => {
+        const ab = st.ansBlocks[sec]; if (!ab || ab.applied === (test || -1)) return;
+        const letters = ab.blocks.length === 1 ? ab.blocks[0] : test ? ab.blocks[test - 1] : null;
+        if (!letters) { if (!ab.asked) { ab.asked = true; msg('warn', esc(ab.name) + ': có <b>' + ab.blocks.length + '</b> bảng đáp án (Test 1–' + ab.blocks.length + '). Chọn Test: <select data-anstest><option value="">—</option>' + ab.blocks.map((x, i) => '<option value="' + (i + 1) + '">Test ' + String(i + 1).padStart(2, '0') + '</option>').join('') + '</select>'); } return; }
+        const base = sec === 'L' ? 1 : 101, km = parseKey(st.keyText); let n = 0; const unk = [];
+        letters.split('').forEach((ch, i) => { if ('ABCD'.includes(ch)) { km[base + i] = 'ABCD'.indexOf(ch); n++; } else unk.push(base + i); });
+        st.keyText = keyText(km); ab.applied = test || -1;
+        msg(unk.length ? 'warn' : 'ok', esc(ab.name) + ': đọc bảng đáp án dạng ảnh' + (ab.blocks.length > 1 ? ' — lấy <b>Test ' + String(test).padStart(2, '0') + '</b>' : '') + ': <b>' + n + '</b> câu' + (unk.length ? '; chưa nhận được câu ' + unk.join(', ') + (unk.every(q => km[q] != null) ? ' (đã có từ file khác)' : ' — gõ thêm vào ô đáp án') : '') + '.');
+      });
+    }
     const msg = (cls, t) => { st.msgs.push([cls, t]); const b = $('#bkMsg'); if (b) b.innerHTML += '<div class="msg ' + cls + '">' + t + '</div>'; };
-    async function addFiles(files) {
+    async function addFiles(files, fromMulti) {
       let list = [];
       for (const f of files) {
-        if (extOf(f.name) === 'zip') { try { list = list.concat(await unzipAll(f)); } catch (e) { msg('bad', esc(f.name) + ': không giải nén được (' + esc(e.message) + ')'); } }
+        if (extOf(f.name) === 'zip') {
+          try {
+            const mz = await openMulti(f);
+            if (mz.tests.length > 1) { lastMulti = mz; st.msgs = st.msgs.filter(m => !/^Đang/.test(m[1])); render(); return; }
+            list = list.concat(await unzipAll(f));
+          } catch (e) { msg('bad', esc(f.name) + ': không giải nén được (' + esc(e.message) + ')'); }
+        }
         else list.push(f);
       }
+      // file .txt (đáp án chuẩn, câu đầu mỗi trang) đọc trước, file KEY chỉ điền phần còn thiếu
+      list.sort((a, b) => (/^(txt|csv)$/.test(extOf(a.name)) ? 0 : 1) - (/^(txt|csv)$/.test(extOf(b.name)) ? 0 : 1));
       for (const f of list) {
         const ext = extOf(f.name);
         if (ext === 'pdf' && isTranscript(f.name)) { msg('info', 'Bỏ qua ' + esc(f.name) + ' (file lời thoại / transcript, không phải trang đề).'); continue; }
@@ -246,9 +448,13 @@
               const km = parseKey(st.keyText); let add = 0;
               Object.keys(k.answers).forEach(q => { if (km[q] == null) { km[q] = k.answers[q]; add++; } });
               st.keyText = keyText(km);
-              const miss = Object.keys(k.qs).map(Number).filter(x => k.qs[x].ans < 0);
+              const miss = Object.keys(k.qs).map(Number).filter(x => k.qs[x].ans < 0 && km[x] == null);
               msg(miss.length ? 'warn' : 'ok', esc(f.name) + ': đọc được <b>' + n + '</b> đáp án' + (add < n ? ' (điền thêm ' + add + ' câu còn trống, giữ đáp án đã có)' : '') + (miss.length ? ' — file không ghi đáp án câu ' + miss.join(', ') + ' (gõ thêm vào ô đáp án)' : '') + '.');
-            } else msg('warn', esc(f.name) + ': không có lớp chữ để đọc đáp án — đã bỏ qua file này. Nếu đây là file đề, đổi tên file bỏ chữ KEY / SCRIPT.');
+            } else {
+              const bl = await readAnswerPdf(f);
+              if (bl.length) addAnsBlocks(f, bl);
+              else msg('warn', esc(f.name) + ': không đọc được đáp án (không có chữ, không thấy bảng đáp án) — đã bỏ qua file này. Nếu đây là file đề, đổi tên file bỏ chữ KEY / SCRIPT.');
+            }
             try { k.task.destroy(); } catch (e) { /* bỏ qua */ }
           } catch (e) { msg('bad', esc(f.name) + ': ' + esc(e.message)); }
           continue;
@@ -256,7 +462,25 @@
         if (ext === 'pdf') {
           const sec = /(^|[^a-z])(lc|listening|nghe)([^a-z]|$)/i.test(f.name) ? 'L' : /(^|[^a-z])(rc|reading|doc|đọc)([^a-z]|$)/i.test(f.name) ? 'R' : 'LR';
           const rg = f.name.match(/trang[\s_]*(\d+)[\s_]*[-–][\s_]*(\d+)/i);
-          st.pdfs.push({ file: f, sec, from: rg ? rg[1] : '', to: rg ? rg[2] : '' }); st.rendered = false;
+          const item = { file: f, sec, from: rg ? rg[1] : '', to: rg ? rg[2] : '' };
+          if (f._bookTest && lastMulti) {
+            try {
+              let runs = lastMulti.scan[f._bookKey];
+              if (!runs) {
+                msg('info', 'Đang tìm trang của từng Test trong cuốn ' + esc(f.name) + '…');
+                runs = lastMulti.scan[f._bookKey] = await scanBook(f, (i, n) => { const pr = $('#bkMsg'); if (pr) { const last = pr.lastElementChild; if (last) last.textContent = 'Đang tìm trang của từng Test trong cuốn ' + f.name + ': trang ' + i + '/' + n + '…'; } });
+              }
+              if (runs.extra && runs.extra.length) {
+                const ak = f._bookKey + '#ans';
+                if (!lastMulti.scan[ak]) { msg('info', 'Đang đọc trang đáp án cuối cuốn ' + esc(f.name) + '…'); let bl = []; for (const rr of runs.extra) bl = bl.concat(await readAnswerPdf(f, rr)); lastMulti.scan[ak] = bl; }
+                if (lastMulti.scan[ak].length) addAnsBlocks({ name: f.name + ' (trang đáp án cuối sách)', _sec: sec === 'R' ? 'R' : sec === 'L' ? 'L' : '' }, lastMulti.scan[ak]);
+              }
+              const r = runs[f._bookTest - 1];
+              if (r) { item.from = String(r[0]); item.to = String(r[1]); msg('ok', esc(f.name) + ' là cả cuốn sách (' + runs.length + ' Test): đã lấy <b>Test ' + String(f._bookTest).padStart(2, '0') + '</b> = trang ' + r[0] + '–' + r[1] + '.'); }
+              else msg('warn', esc(f.name) + ': không tự tìm được trang của Test ' + f._bookTest + ' — điền Trang … – … bằng tay.');
+            } catch (e) { msg('warn', esc(f.name) + ': ' + esc(e.message) + ' — điền Trang … – … bằng tay.'); }
+          }
+          st.pdfs.push(item); st.rendered = false;
         } else if (AUD_EXT.includes(ext)) {
           const ap = audPart(f.name);
           st.auds.push({ file: f, part: ap.part, num: ap.num });
@@ -276,15 +500,27 @@
           const km = parseKey(t);
           if (Object.keys(km).length) st.keyText = (st.keyText.trim() ? st.keyText + '\n' : '') + keyText(km); else msg('warn', esc(f.name) + ': không đọc được đáp án.');
         } else if (IMG_EXT.includes(ext)) {
-          st.keyImgs.push(URL.createObjectURL(f));
+          const bl = await readAnswerImage(f);
+          if (bl && bl.length) {
+            addAnsBlocks(f, bl);
+            if (bl.length === 1 && testOf(f._path || f.name) && !st.curTest && !testOf(st.pdfs.map(p => p.file.name).join(' '))) st.ansTest = testOf(f._path || f.name);
+          } else if (bl === null && /^hei[cf]$/.test(ext)) msg('warn', esc(f.name) + ': trình duyệt này không mở được ảnh <b>HEIC</b> (ảnh iPhone). Mở bằng Safari trên Mac / iPhone, hoặc chuyển ảnh sang JPG (Mac: mở ảnh bằng Xem trước → Tệp → Xuất → JPEG) rồi chọn lại.');
+          else st.keyImgs.push(URL.createObjectURL(f));
         }
+      }
+      applyAnsBook();
+      { // câu file KEY không ghi nhưng đã có từ bảng đáp án / file .txt → bỏ lời nhắc gõ thêm
+        const km = parseKey(st.keyText);
+        st.msgs.forEach(m => { const mm = m[1].match(/ — file không ghi đáp án câu ([\d, ]+) \(gõ thêm vào ô đáp án\)/); if (mm && mm[1].split(',').every(x => km[+x] != null)) { m[1] = m[1].replace(mm[0], ' — các câu file này không ghi đã có từ bảng đáp án'); m[0] = 'ok'; } });
       }
       // một file nghe duy nhất, không ghi Part => toàn bộ phần Nghe
       if (st.auds.length === 1 && !st.auds[0].part) st.auds[0].part = 'all';
+      ['1', '2', '3', '4'].forEach(pt => { if (st.auds.some(a => a.part === pt && !a.num)) st.auds = st.auds.filter(a => a.part !== pt || !a.num); });
       st.auds.sort((a, b) => (a.part || '9').localeCompare(b.part || '9') || a.num - b.num || a.file.name.localeCompare(b.file.name));
       st.pdfs.sort((a, b) => (a.sec === 'L' ? 0 : a.sec === 'LR' ? 1 : 2) - (b.sec === 'L' ? 0 : b.sec === 'LR' ? 1 : 2));
       if (!st.name && st.pdfs.length) st.name = st.pdfs[0].file.name.replace(/\.pdf$/i, '').replace(/[\s_-]*(LC|RC)\b.*$/i, '').replace(/[_]+/g, ' ').trim();
-      st.msgs = st.msgs.filter(m => !/^Đang đọc/.test(m[1]));
+      if (st.curTest && st.name && !testOf(st.name)) st.name = st.name.replace(/[\s\-–]+$/, '') + ' – Test ' + String(st.curTest).padStart(2, '0');
+      st.msgs = st.msgs.filter(m => !/^Đang /.test(m[1]));
       render();
     }
     async function renderAll() {
@@ -387,6 +623,7 @@
       assignPages(bank);
       up('');
       ctx.created(bank);
+      if (lastMulti && st.curTest) lastMulti.done[st.curTest] = true;
       ctx.closeModal();
       toast('Đã nạp đề "' + bank.name + '": ' + bank.questions.length + ' câu, ' + bank.book.pages.length + ' trang đề', 'ok');
     }
