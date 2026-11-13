@@ -1,7 +1,7 @@
 {
-  "name": "Trộn đề thi Online — PV College",
-  "short_name": "Trộn đề thi",
-  "description": "Phần mềm trộn đề trắc nghiệm & tự luận — Lê Duy Nam, GV Trường Cao đẳng Dầu khí",
+  "name": "Trộn đề thi · Từ vựng TOEIC — PV College",
+  "short_name": "Trộn đề · TOEIC",
+  "description": "Trộn đề thi Online và Sổ từ vựng TOEIC trong một ứng dụng — Lê Duy Nam, GV Trường Cao đẳng Dầu khí",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -9,7 +9,15 @@
   "theme_color": "#0b3d5c",
   "lang": "vi",
   "icons": [
-    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }

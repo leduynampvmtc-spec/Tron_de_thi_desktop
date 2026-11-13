@@ -1,6 +1,14 @@
 /* student.js — Trang làm bài của học sinh. Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí */
 (function () {
   'use strict';
+  /* Ảnh đề lưu trên Google Drive (đoạn văn, tranh): lỗi tải thì thử link ảnh nhỏ của Drive */
+  document.addEventListener('error', (e) => {
+    const im = e.target; if (!im || im.tagName !== 'IMG' || !im.dataset || !im.dataset.drv) return;
+    const st = +(im.dataset.st || 0); im.dataset.st = st + 1;
+    if (st === 0) im.src = 'https://drive.google.com/thumbnail?id=' + im.dataset.drv + '&sz=w1600';
+    else if (st === 1) im.src = 'https://drive.google.com/uc?export=view&id=' + im.dataset.drv;
+  }, true);
+
   const { $, $$, esc, LS, IDB, api, toast, fmtSec, fmtDur } = QA;
   const params = new URLSearchParams(location.search);
   const PREVIEW = params.get('preview') === '1';

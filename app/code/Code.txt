@@ -372,7 +372,7 @@ function caiDat() {
  * core.js — Lõi trộn đề / chấm điểm (dùng chung cho trình duyệt và
  * máy chủ Google Apps Script). Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí
  * ===================================================================== */
-var QC_VERSION = '1.7';
+var QC_VERSION = '1.9';
 
 function QC_hash(str) {
   var h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0;

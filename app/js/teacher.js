@@ -380,7 +380,7 @@
   };
   function studentLink(id) {
     // Bản ứng dụng Windows/Mac chạy offline (app://) => link phải trỏ về trang web online
-    const base = /^https?:$/.test(location.protocol) ? location.href.replace(/[^/]*([?#].*)?$/, '') : String(window.QUIZ_PUBLIC_URL || '');
+    const base = /^https?:$/.test(location.protocol) && !/appassets\.androidplatform\.net$/.test(location.hostname) ? location.href.replace(/[^/]*([?#].*)?$/, '') : String(window.QUIZ_PUBLIC_URL || '');
     return base + 'thi.html?e=' + encodeURIComponent(id) + linkParamForApi(conf().api);
   }
   function linkHtml(id) {
@@ -666,17 +666,22 @@
     api: (body) => api(conf().api, Object.assign({ key: conf().key }, body), 1),
     created: async (bank) => {
       banks.push(bank); await saveBanks();
-      const ks = ['L', 'R'].filter(k => bank.questions.some(q => q.skill === k));
-      const fresh = !draft.groups.length || confirm('Dùng đề "' + bank.name + '" cho bài thi đang soạn ở bước 2? (thay các nhóm câu hiện có, đặt sẵn cài đặt thi TOEIC: tự do, ' + (ks.length > 1 ? '120' : ks[0] === 'L' ? '45' : '75') + ' phút, nghe 1 lần)');
+      const ks = ['L', 'R', 'S'].filter(k => bank.questions.some(q => q.skill === k));
+      const spk = ks.length === 1 && ks[0] === 'S';
+      const mins = spk ? Math.max(10, Math.ceil(bank.questions.reduce((s, q) => s + (q.rec || 60) + (q.prep || 0) + 20, 0) / 60)) : ks.length > 1 ? 120 : ks[0] === 'L' ? 45 : 75;
+      const book = !!bank.book;
+      const fresh = !draft.groups.length || confirm('Dùng đề "' + bank.name + '" cho bài thi đang soạn ở bước 2? (thay các nhóm câu hiện có, đặt sẵn cài đặt: ' + (spk ? 'đề Nói, ' : 'thi TOEIC: tự do, ') + mins + ' phút' + (spk ? '' : ', nghe 1 lần') + ')');
       if (fresh) {
-        draft.groups = ks.map(k => ({ bankId: bank.id, skill: k, pick: 'random', count: '', range: '', list: '', sec: '', pts: '', shuffleOpts: false }));
-        draft.settings = Object.assign({}, draft.settings, { navMode: 'free', freeTime: 'total', totalMin: ks.length > 1 ? 120 : ks[0] === 'L' ? 45 : 75, order: 'keep', audioPlays: 1, toeic: true, maxViolations: draft.settings.maxViolations != null ? draft.settings.maxViolations : 3 });
+        draft.groups = ks.map(k => ({ bankId: bank.id, skill: k, pick: 'random', count: '', range: '', list: '', sec: '', pts: '', shuffleOpts: !book && k === 'R' }));
+        draft.settings = Object.assign({}, draft.settings, { navMode: 'free', freeTime: 'total', totalMin: mins, order: book || spk ? 'keep' : (draft.settings.order || 'keep'), audioPlays: 1, toeic: !spk, maxViolations: draft.settings.maxViolations != null ? draft.settings.maxViolations : 3 });
         draft.info = Object.assign({}, draft.info, { loai: 'Thi thử TOEIC', noiDung: bank.name });
         LS.set(K.draft, draft); fillForm();
       }
     }
   };
   if ($('#bookOpen')) $('#bookOpen').onclick = () => { if (!window.QuizBook) return toast('Thiếu js/booklet.js', 'bad'); QuizBook.openImport(bookCtx); };
+  if ($('#keyOpen')) $('#keyOpen').onclick = () => { if (!window.QuizBook || !window.QuizEts) return toast('Thiếu js/etskey.js', 'bad'); QuizBook.openText(bookCtx); };
+  if ($('#speakOpen')) $('#speakOpen').onclick = () => { if (!window.QuizBook || !window.QuizEts) return toast('Thiếu js/etskey.js', 'bad'); QuizBook.openSpeak(bookCtx); };
 
   /* ------------------------------- khởi động ------------------------------- */
   fillForm();

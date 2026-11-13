@@ -1,8 +1,8 @@
 {
   "name": "tron-de-thi-online",
   "productName": "Tron De Thi Online",
-  "version": "1.7.0",
-  "description": "Phần mềm trộn đề thi trắc nghiệm, điền khuyết, tự luận — Lê Duy Nam, Giảng viên Trường Cao đẳng Dầu khí",
+  "version": "1.9.0",
+  "description": "Trộn đề thi Online + Sổ từ vựng TOEIC (2 trong 1) — Lê Duy Nam, Giảng viên Trường Cao đẳng Dầu khí",
   "author": "Lê Duy Nam <Truong Cao dang Dau khi>",
   "license": "UNLICENSED",
   "private": true,

@@ -22,12 +22,13 @@
 </style>
 </head>
 <body>
-<header class="topbar"><div class="wrap"><a class="brand" href="index.html"><span class="logo">Q</span><span>Trộn đề thi Online<small>Hướng dẫn cài đặt &amp; sử dụng</small></span></a><span class="spacer"></span><a class="btn sm" href="giaovien.html">Trang giáo viên</a></div></header>
+<header class="topbar"><div class="wrap"><a class="brand" href="trondethi.html"><span class="logo">Q</span><span>Trộn đề thi Online<small>Hướng dẫn cài đặt &amp; sử dụng</small></span></a><span class="spacer"></span><a class="btn sm" href="giaovien.html">Trang giáo viên</a></div></header>
 <main class="wrap doc">
   <div class="card">
     <p style="margin-top:0">Để dùng phần mềm, mỗi thầy/cô cần <b>1 Google Sheet riêng</b> làm “máy chủ” (nơi lưu đề, phát đề cho từng học sinh, chấm điểm và lưu kết quả). Việc này chỉ làm <b>1 lần</b>, sau đó dùng cho mọi bài, mọi lớp.</p>
+    <div class="msg info"><b>Trang chủ 2 trong 1:</b> mở phần mềm (web, Windows, Mac, Android) sẽ thấy 2 ô — <b>Sổ từ vựng TOEIC</b> (tự học từ vựng, ngữ pháp, đọc hiểu, tra từ) và <b>Trộn đề thi Online</b> (giáo viên ra đề, học sinh dán link làm bài). Nút ⌂ để quay về trang chủ.</div>
     <div class="msg info">Chưa cài Google Sheet vẫn dùng được nút <b>“Xem thử như học sinh”</b> để kiểm tra đề ngay trên máy.</div>
-    <div class="msg info row" style="justify-content:space-between"><span>Bản <b>hướng dẫn đầy đủ có hình minh họa</b> (PDF, 21 trang) để in hoặc gửi đồng nghiệp.</span><a class="btn sm primary" href="mau/Huong_dan_su_dung_Tron_de_thi_Online.pdf" download>Tải hướng dẫn PDF</a></div>
+    <div class="msg info row" style="justify-content:space-between"><span>Bản <b>hướng dẫn đầy đủ có hình minh họa</b> (PDF, 24 trang) để in hoặc gửi đồng nghiệp.</span><a class="btn sm primary" href="mau/Huong_dan_su_dung_Tron_de_thi_Online.pdf" download>Tải hướng dẫn PDF</a></div>
   </div>
 
   <div class="card">
@@ -105,6 +106,32 @@
       <li>Bấm <b>Bước tiếp: đọc file PDF đề</b>. Dưới mỗi ảnh trang là <b>số câu đầu tiên in trên trang</b>: PDF có chữ được điền tự động; PDF scan (ảnh) thì gõ vào ô “câu đầu mỗi trang”, cách nhau dấu phẩy, trang không có câu hỏi để trống — vd <code>101, 109, 121, 131, …</code>.</li>
       <li>Bấm <b>Lưu ngân hàng &amp; tải trang đề, file nghe lên Google Drive</b> (khoảng 1–3 phút). Phần mềm đặt sẵn bài thi: 200 câu, tự do, 120 phút, nghe 1 lần, quy đổi TOEIC — sang tab <b>2. Tạo đề &amp; link</b> để lưu và lấy link như bình thường.</li>
       <li>Đề nguyên bộ giữ nguyên số câu và vị trí A/B/C/D như sách đề (không trộn). Muốn chỉ thi phần Nghe hoặc Đọc: xóa nhóm còn lại ở mục Nhóm câu hỏi.</li>
+    </ol>
+    <p class="hint">Mới ở bản 1.8: ở bước chọn file, nếu có file <b>KEY / SCRIPT AND KEY</b> dạng PDF có chữ (vd <i>ETS 2026 LISTENING TEST 1 (SCRIPT AND KEY).pdf</i>), phần mềm <b>tự đọc đáp án</b> từ file đó — không phải gõ tay.</p>
+    <p class="hint">Mới ở bản 1.9:</p>
+    <ul class="hint" style="margin-top:0">
+      <li><b>Lấy riêng 1 Test từ cả cuốn sách:</b> ở bảng File đề PDF, điền <b>Trang … – …</b> (vd sách LC: Test 1 lấy trang 2–13, Test 2 trang 16–27…). Bỏ trống = lấy cả file.</li>
+      <li>File có chữ <b>TRANSCRIPT</b> được <b>tự bỏ qua</b>; file <b>KEY / SCRIPT</b> chỉ dùng để đọc đáp án (không thành trang đề). Đáp án đã có (gõ tay hoặc file .txt) được giữ nguyên, file KEY chỉ điền câu còn trống.</li>
+      <li><b>File nghe từng câu</b> (E26-T01-01.mp3, E26-T01-32-34.mp3…) được tự xếp vào Part 1–4 và <b>gộp</b> thành 1 file mỗi Part khi lưu.</li>
+      <li>File <b>.txt</b> có dòng <code>LC: ,1,3,5,7,32…</code> và <code>RC: 101,109,121…</code> (câu đầu mỗi trang) được tự điền vào ô câu đầu mỗi trang.</li>
+      <li>Bộ đề đã tách sẵn (mỗi bộ 1 file .zip gồm LC, RC, file nghe Part 1–4, đáp án và câu đầu mỗi trang): chỉ cần chọn file .zip → <b>Bước tiếp: đọc file PDF đề</b> → <b>Lưu</b>.</li>
+    </ul>
+
+    <h3 style="margin-top:18px">5c. Đề trắc nghiệm có chữ từ file KEY (trộn được câu)</h3>
+    <p>Từ file <b>KEY PDF</b> của bộ đề, phần mềm tự tách <b>câu hỏi, phương án, đáp án</b>, ảnh đoạn văn Part 6–7 và lời thoại Part 3–4, rồi ghép <b>file nghe theo từng câu</b>. Kết quả là đề trắc nghiệm thường: học sinh đọc chữ trên điện thoại (không phải xem trang PDF), câu được <b>trộn</b>, các câu cùng một đoạn luôn đi cùng nhau.</p>
+    <ol>
+      <li>Trang <b>Đề Tiếng Anh</b> → tab <b>1. Ngân hàng câu hỏi</b> → khung <b>Đề trắc nghiệm có chữ</b> → <b>+ Tạo từ file KEY</b>.</li>
+      <li>Chọn cùng lúc: file KEY Nghe và/hoặc Đọc (.pdf), các <b>file nghe</b> (.mp3 tên kiểu <code>E26-T01-01.mp3</code>, <code>E26-T01-32-34.mp3</code> — hoặc cả thư mục .zip), và <b>6 ảnh tranh Part 1</b> nếu có (đặt tên theo thứ tự câu 1–6).</li>
+      <li>Bấm <b>Bước tiếp: đọc file KEY</b>. Bảng kết quả cho biết từng Part: số câu, đáp án đủ/thiếu, file nghe/ảnh đã ghép. Câu thiếu đáp án được liệt kê — gõ bổ sung ngay trong bảng. Bỏ đánh dấu Part nào không muốn đưa vào đề (vd không có ảnh Part 1).</li>
+      <li>Chọn có <b>lưu lời thoại Part 3–4</b> (xem khi chữa bài) hay không, đặt tên ngân hàng → <b>Lưu ngân hàng &amp; tải file nghe, ảnh lên Google Drive</b> (1–3 phút) → sang tab <b>2. Tạo đề &amp; link</b> như bình thường.</li>
+    </ol>
+    <p class="hint">Part 1, Part 2 trong đề ETS không in câu hỏi (chỉ có trong file nghe): học sinh nghe rồi chọn A/B/C(/D). Câu Nghe không trộn phương án; câu Đọc được trộn phương án.</p>
+
+    <h3 style="margin-top:18px">5d. Đề Nói (Speaking) từ file PDF</h3>
+    <ol>
+      <li>Tab <b>1. Ngân hàng câu hỏi</b> → <b>+ Tạo đề Nói</b> → chọn file PDF đề Nói (vd đề TOEIC Speaking 11 câu).</li>
+      <li>Phần mềm tách từng <b>Question 1, 2…</b>, lấy thời gian <b>chuẩn bị / ghi âm</b> theo đề (hoặc theo chuẩn TOEIC). Trong bảng sửa được nội dung, thời gian, điểm; đánh dấu <b>Ảnh trang</b> cho câu cần học sinh xem hình (Describe a picture). PDF scan: mỗi trang là một câu.</li>
+      <li>Bấm <b>Lưu ngân hàng đề Nói</b>. Học sinh xem đề, đếm ngược chuẩn bị rồi ghi âm; thầy/cô nghe lại và chấm ở tab <b>3. Kết quả</b>.</li>
     </ol>
   </div>
 

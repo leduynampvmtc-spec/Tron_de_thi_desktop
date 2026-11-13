@@ -3,61 +3,85 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Trộn đề thi Online</title>
-<meta name="description" content="Phần mềm trộn đề trắc nghiệm & tự luận online — Lê Duy Nam, Giảng viên Trường Cao đẳng Dầu khí">
+<title>Trộn đề thi · Từ vựng TOEIC</title>
+<meta name="description" content="Trộn đề thi Online và Sổ từ vựng TOEIC trong một ứng dụng — Lê Duy Nam, Giảng viên Trường Cao đẳng Dầu khí">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="img/icon-192.png">
+<link rel="apple-touch-icon" href="img/icon-192.png">
 <meta name="theme-color" content="#0b3d5c">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
 <style>
-  .hero { background: linear-gradient(135deg, #0b3d5c 0%, #0f5a85 60%, #12709f 100%); color: #fff; padding: 46px 0 64px; }
-  .hero .wrap { display: grid; grid-template-columns: 1.25fr .75fr; gap: 34px; align-items: center; }
-  .hero h1 { font-size: 2.3rem; letter-spacing: -.5px; margin-bottom: 12px; }
-  .hero p { font-size: 1.05rem; opacity: .9; max-width: 560px; }
-  .hero .photo { position: relative; justify-self: center; }
-  .hero .photo img { width: min(300px, 70vw); aspect-ratio: 1; border-radius: 24px; display: block; box-shadow: 0 18px 50px rgba(0,0,0,.35); }
-  .hero .cap { margin-top: 12px; text-align: center; font-size: .92rem; }
-  .hero .cap b { display: block; font-size: 1.05rem; }
-  .feat { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
-  .feat span { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); padding: 5px 11px; border-radius: 99px; font-size: .85rem; }
-  .choose { margin-top: -34px; }
-  .choose .card h2 { display: flex; align-items: center; gap: 10px; }
-  .num { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: #2a1d00; display: grid; place-items: center; font-weight: 800; font-size: .95rem; }
-  @media (max-width: 760px) { .hero .wrap { grid-template-columns: 1fr; } .hero h1 { font-size: 1.8rem; } }
+  body { background: #eef3f7; }
+  .top { background: linear-gradient(135deg, #0b3d5c 0%, #0f5a85 60%, #12709f 100%); color: #fff; padding: 30px 0 78px; }
+  .top .wrap { display: flex; align-items: center; gap: 18px; }
+  .top img { width: 74px; height: 74px; border-radius: 18px; object-fit: cover; box-shadow: 0 8px 24px rgba(0,0,0,.3); flex: none; }
+  .top h1 { font-size: 1.75rem; letter-spacing: -.4px; margin: 0 0 4px; }
+  .top p { margin: 0; opacity: .88; font-size: .95rem; }
+  .apps { margin-top: -54px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .app { background: #fff; border-radius: 20px; box-shadow: 0 10px 34px rgba(11,61,92,.13); padding: 22px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .app .hd { display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }
+  .app .hd img { width: 64px; height: 64px; border-radius: 16px; flex: none; box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+  .app h2 { margin: 0; font-size: 1.3rem; }
+  .app .sub { color: var(--muted); font-size: .9rem; margin-top: 2px; }
+  .app ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: .92rem; line-height: 1.6; }
+  .app .go { display: block; text-align: center; padding: 13px; font-size: 1.02rem; border-radius: 12px; }
+  .app.vocab { border-top: 6px solid #e8a317; }
+  .app.quiz { border-top: 6px solid #0f5a85; }
+  .row2 { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row2 .btn { flex: 1 1 auto; text-align: center; }
+  .stu { border-top: 1px dashed var(--line); padding-top: 12px; }
+  .stu b { font-size: .92rem; }
+  .linkbox { margin-top: 6px; }
+  @media (max-width: 760px) {
+    .apps { grid-template-columns: 1fr; }
+    .top h1 { font-size: 1.35rem; } .top img { width: 58px; height: 58px; }
+  }
 </style>
 </head>
 <body>
-<section class="hero">
+<section class="top">
   <div class="wrap">
+    <img src="img/nam-560.jpg" alt="Lê Duy Nam">
     <div>
-      <div class="pill" style="background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.25)">Trường Cao đẳng Dầu khí · PV College</div>
-      <h1 style="margin-top:14px">Trộn đề thi trắc nghiệm &amp; tự luận Online</h1>
-      <p>Nạp file đề Word, trộn mỗi học sinh một đề riêng, mỗi lần hiện một câu với đồng hồ đếm ngược. Điểm gửi thẳng về giáo viên và xuất Excel để nhập vào file KQHT.</p>
-      <div class="feat"><span>Đọc đề .docx có công thức</span><span>Đề riêng cho từng em</span><span>Đếm ngược từng câu</span><span>Chống rời màn hình / chụp màn hình</span><span>Chạy trên Windows, Mac, điện thoại</span></div>
+      <h1>Trộn đề thi · Từ vựng TOEIC</h1>
+      <p>Hai ứng dụng trong một — Lê Duy Nam, Giảng viên Trường Cao đẳng Dầu khí</p>
     </div>
-    <div class="photo"><img src="img/nam-560.jpg" alt="Lê Duy Nam"><div class="cap"><b>Phần mềm được tạo bởi Lê Duy Nam</b>Giảng viên Trường Cao đẳng Dầu khí</div></div>
   </div>
 </section>
-<main class="wrap choose">
-  <div class="grid g2">
-    <div class="card">
-      <h2><span class="num">GV</span> Giáo viên</h2>
-      <p class="muted">Nạp ngân hàng câu hỏi, cấu hình đề, lấy link gửi học sinh, xem kết quả và xuất Excel. Đề Tiếng Anh (Nghe – Đọc – Viết – Nói, có file nghe) soạn ở trang riêng.</p>
-      <a class="btn primary" href="giaovien.html">Môn học / Mô đun</a>
-      <a class="btn accent" href="tienganh.html">Đề Tiếng Anh (TOEIC)</a>
-      <a class="btn" href="huong-dan.html">Hướng dẫn cài đặt</a>
-    </div>
-    <div class="card">
-      <h2><span class="num">HS</span> Học sinh</h2>
-      <p class="muted">Mở đúng link giáo viên gửi. Hoặc dán link / nhập mã đề vào đây:</p>
-      <div class="linkbox"><input type="text" id="code" placeholder="Dán link hoặc nhập mã đề"><button class="btn primary" id="go">Vào làm bài</button></div>
-      <div id="goMsg"></div>
-    </div>
+<main class="wrap">
+  <div class="apps">
+    <section class="app vocab">
+      <a class="hd" href="tuvung/index.html"><img src="tuvung/icon-192.png" alt=""><div><h2>Sổ từ vựng TOEIC</h2><div class="sub">Tự học từ vựng, ngữ pháp, đọc hiểu</div></div></a>
+      <ul>
+        <li>1.184 từ TOEIC: loại từ, phiên âm, nghe đọc, từ đồng / trái nghĩa</li>
+        <li>Flashcard, điền từ, làm lại câu sai, trộn câu mỗi lần</li>
+        <li>Đọc hiểu, ngữ pháp Part 5, tra từ Anh–Việt / Việt–Anh, dịch đoạn văn</li>
+        <li>Học được khi không có mạng, đồng bộ máy tính ↔ điện thoại</li>
+      </ul>
+      <a class="btn primary go" href="tuvung/index.html" style="background:#e8a317;border-color:#e8a317;color:#2a1d00">Mở Sổ từ vựng TOEIC →</a>
+    </section>
+    <section class="app quiz">
+      <a class="hd" href="trondethi.html"><img src="img/icon-192.png" alt=""><div><h2>Trộn đề thi Online</h2><div class="sub">Giáo viên ra đề — học sinh làm bài</div></div></a>
+      <ul>
+        <li>Nạp đề Word, mỗi học sinh một đề riêng, chấm điểm, xuất Excel</li>
+        <li>Đề Tiếng Anh 4 kỹ năng, đề TOEIC nguyên bộ, đề trắc nghiệm từ file KEY, đề Nói</li>
+      </ul>
+      <div class="row2">
+        <a class="btn primary" href="giaovien.html">Môn học / Mô đun</a>
+        <a class="btn accent" href="tienganh.html">Đề Tiếng Anh (TOEIC)</a>
+        <a class="btn" href="trondethi.html">Giới thiệu &amp; hướng dẫn</a>
+      </div>
+      <div class="stu">
+        <b>Học sinh:</b> <span class="muted" style="font-size:.88rem">mở đúng link giáo viên gửi, hoặc dán link / mã đề:</span>
+        <div class="linkbox"><input type="text" id="code" placeholder="Dán link hoặc nhập mã đề"><button class="btn primary" id="go">Vào làm bài</button></div>
+        <div id="goMsg"></div>
+      </div>
+    </section>
   </div>
 </main>
-<footer class="foot" style="margin-top:30px"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.7</span></div></footer>
+<footer class="foot" style="margin-top:30px"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.9</span></div></footer>
 <script src="js/config.js"></script>
 <script src="js/common.js"></script>
 <script>

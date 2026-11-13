@@ -31,7 +31,7 @@
 <body>
 <header class="topbar">
   <div class="wrap">
-    <a class="brand" href="index.html"><span class="logo">Q</span><span>Trộn đề thi Online<small>Đề Tiếng Anh · Nghe – Đọc – Viết – Nói</small></span></a>
+    <a class="brand" href="trondethi.html"><span class="logo">Q</span><span>Trộn đề thi Online<small>Đề Tiếng Anh · Nghe – Đọc – Viết – Nói</small></span></a>
     <span class="spacer"></span>
     <nav class="tabs" id="tabs">
       <button class="tab on" data-tab="banks">1. Ngân hàng câu hỏi</button>
@@ -61,6 +61,10 @@
       <div class="row"><div style="flex:1;min-width:240px"><h2 style="margin:0 0 4px">Đề TOEIC nguyên bộ — file PDF đề + đáp án + file nghe</h2>
       <p class="muted" style="margin:0">Dùng ngay bộ đề ETS / TOEIC có sẵn (đề LC, RC dạng PDF, đáp án, file nghe Part 1–4), <b>không cần gõ lại đề</b>. Học sinh xem đúng trang đề gốc, chọn đáp án trên phiếu trả lời ngay dưới trang, file nghe tự phát lần lượt từng Part.</p></div>
       <button class="btn primary" id="bookOpen" type="button">+ Nạp đề nguyên bộ (.zip / .pdf)</button></div>
+      <div class="row bookmore">
+        <div class="bkopt"><b>Đề trắc nghiệm có chữ từ file KEY (.pdf)</b><span class="hint">Tự tách câu hỏi, phương án, đáp án, đoạn văn Part 6–7 và ghép file nghe từng câu. Trộn được câu như đề thường.</span><button class="btn" id="keyOpen" type="button">+ Tạo từ file KEY</button></div>
+        <div class="bkopt"><b>Đề Nói (Speaking) từ file PDF</b><span class="hint">Mỗi “Question” thành một câu ghi âm, có thời gian chuẩn bị / trả lời, kèm ảnh trang đề khi cần.</span><button class="btn" id="speakOpen" type="button">+ Tạo đề Nói</button></div>
+      </div>
     </div>
     <div class="card">
       <div class="row"><h2 style="margin:0">Ngân hàng đã nạp</h2><span class="spacer"></span><span class="muted" id="bankTotal"></span></div>
@@ -244,7 +248,7 @@
 
 <div class="modal-bg" id="modal"><div class="modal" id="modalBody"></div></div>
 
-<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.7</span></div></footer>
+<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.9</span></div></footer>
 
 <script src="js/config.js"></script>
 <script src="js/common.js"></script>
@@ -252,6 +256,7 @@
 <script src="js/docx.js"></script>
 <script>window.QUIZ_MODE = 'en';</script>
 <script src="js/booklet.js"></script>
+<script src="js/etskey.js"></script>
 <script src="js/teacher.js"></script>
 </body>
 </html>

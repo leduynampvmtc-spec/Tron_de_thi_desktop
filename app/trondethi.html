@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trộn đề thi Online</title>
+<meta name="description" content="Phần mềm trộn đề trắc nghiệm & tự luận online — Lê Duy Nam, Giảng viên Trường Cao đẳng Dầu khí">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="img/icon-192.png">
+<meta name="theme-color" content="#0b3d5c">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  .hero { background: linear-gradient(135deg, #0b3d5c 0%, #0f5a85 60%, #12709f 100%); color: #fff; padding: 46px 0 64px; }
+  .hero .wrap { display: grid; grid-template-columns: 1.25fr .75fr; gap: 34px; align-items: center; }
+  .hero h1 { font-size: 2.3rem; letter-spacing: -.5px; margin-bottom: 12px; }
+  .hero p { font-size: 1.05rem; opacity: .9; max-width: 560px; }
+  .hero .photo { position: relative; justify-self: center; }
+  .hero .photo img { width: min(300px, 70vw); aspect-ratio: 1; border-radius: 24px; display: block; box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+  .hero .cap { margin-top: 12px; text-align: center; font-size: .92rem; }
+  .hero .cap b { display: block; font-size: 1.05rem; }
+  .feat { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .feat span { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); padding: 5px 11px; border-radius: 99px; font-size: .85rem; }
+  .choose { margin-top: -34px; }
+  .choose .card h2 { display: flex; align-items: center; gap: 10px; }
+  .num { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: #2a1d00; display: grid; place-items: center; font-weight: 800; font-size: .95rem; }
+  @media (max-width: 760px) { .hero .wrap { grid-template-columns: 1fr; } .hero h1 { font-size: 1.8rem; } }
+</style>
+</head>
+<body>
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><a class="pill" href="index.html" style="background:rgba(255,255,255,.22);color:#fff;border-color:rgba(255,255,255,.35);text-decoration:none">⌂ Trang chủ</a><a class="pill" href="tuvung/index.html" style="background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.25);text-decoration:none">Sổ từ vựng TOEIC</a><span class="pill" style="background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.25)">Trường Cao đẳng Dầu khí · PV College</span></div>
+      <h1 style="margin-top:14px">Trộn đề thi trắc nghiệm &amp; tự luận Online</h1>
+      <p>Nạp file đề Word, trộn mỗi học sinh một đề riêng, mỗi lần hiện một câu với đồng hồ đếm ngược. Điểm gửi thẳng về giáo viên và xuất Excel để nhập vào file KQHT.</p>
+      <div class="feat"><span>Đọc đề .docx có công thức</span><span>Đề riêng cho từng em</span><span>Đếm ngược từng câu</span><span>Chống rời màn hình / chụp màn hình</span><span>Chạy trên Windows, Mac, điện thoại</span></div>
+    </div>
+    <div class="photo"><img src="img/nam-560.jpg" alt="Lê Duy Nam"><div class="cap"><b>Phần mềm được tạo bởi Lê Duy Nam</b>Giảng viên Trường Cao đẳng Dầu khí</div></div>
+  </div>
+</section>
+<main class="wrap choose">
+  <div class="grid g2">
+    <div class="card">
+      <h2><span class="num">GV</span> Giáo viên</h2>
+      <p class="muted">Nạp ngân hàng câu hỏi, cấu hình đề, lấy link gửi học sinh, xem kết quả và xuất Excel. Đề Tiếng Anh (Nghe – Đọc – Viết – Nói, có file nghe) soạn ở trang riêng.</p>
+      <a class="btn primary" href="giaovien.html">Môn học / Mô đun</a>
+      <a class="btn accent" href="tienganh.html">Đề Tiếng Anh (TOEIC)</a>
+      <a class="btn" href="huong-dan.html">Hướng dẫn cài đặt</a>
+    </div>
+    <div class="card">
+      <h2><span class="num">HS</span> Học sinh</h2>
+      <p class="muted">Mở đúng link giáo viên gửi. Hoặc dán link / nhập mã đề vào đây:</p>
+      <div class="linkbox"><input type="text" id="code" placeholder="Dán link hoặc nhập mã đề"><button class="btn primary" id="go">Vào làm bài</button></div>
+      <div id="goMsg"></div>
+    </div>
+  </div>
+</main>
+<footer class="foot" style="margin-top:30px"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v1.9</span></div></footer>
+<script src="js/config.js"></script>
+<script src="js/common.js"></script>
+<script>
+  QA.$('#authorBox').innerHTML = QA.AUTHOR_HTML;
+  QA.$('#go').onclick = () => {
+    const v = QA.$('#code').value.trim();
+    if (/^https?:\/\//i.test(v)) { location.href = v; return; }
+    const api = window.QUIZ_API || QA.LS.get('apiUrl', '');
+    if (!v) return;
+    if (!api) { QA.$('#goMsg').innerHTML = '<div class="msg warn">Hãy dùng đúng link giáo viên gửi (mã đề cần kèm địa chỉ máy chủ).</div>'; return; }
+    location.href = 'thi.html?e=' + encodeURIComponent(v.toUpperCase()) + QA.linkParamForApi(api);
+  };
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

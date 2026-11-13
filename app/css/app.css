@@ -204,3 +204,13 @@ body.bookmode .wrap.bkwrap { max-width: 1280px; }
   .bkimg { max-height: none; }
   .bkview { padding: 6px; }
 }
+
+/* v1.8 — đề có chữ từ file KEY, đề Nói từ PDF */
+.bookmore { margin-top: 12px; gap: 10px; align-items: stretch; }
+.bkopt { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 12px; background: var(--soft); }
+.bkopt .btn { align-self: flex-start; }
+img.drvimg { max-width: 100%; height: auto; display: block; margin: 6px auto; border-radius: 6px; background: #fff; }
+.spktext { white-space: pre-wrap; line-height: 1.6; padding: 8px 10px; background: var(--soft); border-radius: 8px; margin: 6px 0; }
+/* v1.9 — chọn trang trong file PDF */
+.pgrange { display: flex; align-items: center; gap: 4px; margin-top: 6px; font-size: .85rem; color: var(--muted); white-space: nowrap; }
+.pgrange input { width: 64px; padding: 4px 6px; }
