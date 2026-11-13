@@ -10,8 +10,8 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Cai thu vien
@@ -24,7 +24,7 @@ jobs:
           for i in 1 2; do npx electron-builder --win --publish never 2>&1 | tee build.log; c=${PIPESTATUS[0]}; [ $c -eq 0 ] && break; echo "--- Thu lai lan $i ---"; sleep 10; done
           if [ $c -ne 0 ]; then grep -iE "error|⨯|failed|cannot|ENOENT|EACCES|EPERM" build.log | tail -12 | while IFS= read -r l; do echo "::error title=Windows::$l"; done; fi
           exit $c
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: TronDeThi-Windows
           path: dist/*.exe
@@ -36,8 +36,8 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Cai thu vien
@@ -58,7 +58,7 @@ jobs:
           for i in 1 2; do npx electron-builder --mac dmg --arm64 --x64 --publish never 2>&1 | tee dmg.log; c=${PIPESTATUS[0]}; [ $c -eq 0 ] && break; echo "--- Thu lai lan $i ---"; sleep 15; done
           if [ $c -ne 0 ]; then grep -iE "error|⨯|failed|hdiutil" dmg.log | tail -6 | while IFS= read -r l; do echo "::warning title=Mac dmg (van co ban .zip)::$l"; done; fi
           exit $c
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: TronDeThi-Mac
           path: |
@@ -70,16 +70,17 @@ jobs:
   android:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
       - name: Cai Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
-      - uses: gradle/actions/setup-gradle@v4
+        run: |
+          SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SM" --licenses > /dev/null || true
+          "$SM" "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
+      - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '8.9'
       - name: Tao du an Android (WebView)
@@ -280,7 +281,7 @@ jobs:
         run: |
           VER=$(node -p "require('./package.json').version")
           cp android/app/build/outputs/apk/debug/app-debug.apk TronDeThi-Android-$VER.apk
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: TronDeThi-Android
           path: TronDeThi-Android-*.apk
