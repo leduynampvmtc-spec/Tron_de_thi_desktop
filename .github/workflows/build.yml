@@ -1,5 +1,5 @@
-# Tự động đóng gói phần mềm cho Windows (.exe) và macOS (.dmg + .zip)
-name: Build Windows & Mac
+# Tự động đóng gói phần mềm cho Windows (.exe), macOS (.dmg + .zip) và Android (.apk)
+name: Build Windows Mac Android
 
 on:
   push:
@@ -10,15 +10,21 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - name: Cai thu vien
-        run: npm install --no-audit --no-fund
+        shell: bash
+        run: npm install --no-audit --no-fund || (sleep 20 && npm install --no-audit --no-fund)
       - name: Dong goi Windows
-        run: npx electron-builder --win --publish never
-      - uses: actions/upload-artifact@v4
+        shell: bash
+        run: |
+          set +o pipefail
+          for i in 1 2; do npx electron-builder --win --publish never 2>&1 | tee build.log; c=${PIPESTATUS[0]}; [ $c -eq 0 ] && break; echo "--- Thu lai lan $i ---"; sleep 10; done
+          if [ $c -ne 0 ]; then grep -iE "error|⨯|failed|cannot|ENOENT|EACCES|EPERM" build.log | tail -12 | while IFS= read -r l; do echo "::error title=Windows::$l"; done; fi
+          exit $c
+      - uses: actions/upload-artifact@v5
         with:
           name: TronDeThi-Windows
           path: dist/*.exe
@@ -30,22 +36,253 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - name: Cai thu vien
-        run: npm install --no-audit --no-fund
+        shell: bash
+        run: npm install --no-audit --no-fund || (sleep 20 && npm install --no-audit --no-fund)
       - name: Dong goi Mac (zip)
-        run: npx electron-builder --mac zip --arm64 --x64 --publish never
+        shell: bash
+        run: |
+          set +o pipefail
+          for i in 1 2; do npx electron-builder --mac zip --arm64 --x64 --publish never 2>&1 | tee build.log; c=${PIPESTATUS[0]}; [ $c -eq 0 ] && break; echo "--- Thu lai lan $i ---"; rm -rf dist; sleep 15; done
+          if [ $c -ne 0 ]; then grep -iE "error|⨯|failed|cannot|ENOENT|EACCES|EPERM|hdiutil|codesign" build.log | tail -12 | while IFS= read -r l; do echo "::error title=Mac::$l"; done; fi
+          exit $c
       - name: Dong goi Mac (dmg)
         continue-on-error: true
-        run: npx electron-builder --mac dmg --arm64 --x64 --publish never
-      - uses: actions/upload-artifact@v4
+        shell: bash
+        run: |
+          set +o pipefail
+          for i in 1 2; do npx electron-builder --mac dmg --arm64 --x64 --publish never 2>&1 | tee dmg.log; c=${PIPESTATUS[0]}; [ $c -eq 0 ] && break; echo "--- Thu lai lan $i ---"; sleep 15; done
+          if [ $c -ne 0 ]; then grep -iE "error|⨯|failed|hdiutil" dmg.log | tail -6 | while IFS= read -r l; do echo "::warning title=Mac dmg (van co ban .zip)::$l"; done; fi
+          exit $c
+      - uses: actions/upload-artifact@v5
         with:
           name: TronDeThi-Mac
           path: |
             dist/*.dmg
             dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Cai Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Tao du an Android (WebView)
+        run: |
+          set -e
+          SITE=$(node -e "try{const c=require('./app-config.json');process.stdout.write(String(c.siteUrl||'').trim())}catch(e){}")
+          VER=$(node -p "require('./package.json').version")
+          CODE=$(node -p "const v=require('./package.json').version.split('.').map(Number);v[0]*10000+v[1]*100+(v[2]||0)")
+          A=android; rm -rf $A; mkdir -p $A/app/src/main/java/vn/edu/pvcollege/trondethi $A/app/src/main/res/values $A/app/src/main/res/mipmap $A/app/src/main/assets
+          cp -r app $A/app/src/main/assets/app
+          cp build/icon.png $A/app/src/main/res/mipmap/ic_launcher.png
+          cat > $A/settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+          rootProject.name = "TronDeThi"
+          include ':app'
+          EOF
+          echo "plugins { id 'com.android.application' version '8.5.2' apply false }" > $A/build.gradle
+          printf 'org.gradle.jvmargs=-Xmx2048m\nandroid.useAndroidX=true\n' > $A/gradle.properties
+          cat > $A/app/build.gradle <<EOF
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'vn.edu.pvcollege.trondethi'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'vn.edu.pvcollege.trondethi'
+                  minSdk 24
+                  targetSdk 34
+                  versionCode $CODE
+                  versionName '$VER'
+                  buildConfigField 'String', 'SITE_URL', '"$SITE"'
+              }
+              buildFeatures { buildConfig true }
+              compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+          }
+          dependencies { implementation 'androidx.webkit:webkit:1.11.0' }
+          EOF
+          cat > $A/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+              <application android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:theme="@style/AppTheme" android:usesCleartextTraffic="false">
+                  <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > $A/app/src/main/res/values/strings.xml <<'EOF'
+          <resources><string name="app_name">Trộn đề · TOEIC</string></resources>
+          EOF
+          cat > $A/app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+                  <item name="android:statusBarColor">#0b3d5c</item>
+                  <item name="android:navigationBarColor">#0b3d5c</item>
+              </style>
+          </resources>
+          EOF
+          cat > $A/app/src/main/java/vn/edu/pvcollege/trondethi/MainActivity.java <<'EOF'
+          package vn.edu.pvcollege.trondethi;
+
+          import android.Manifest;
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.net.ConnectivityManager;
+          import android.net.NetworkInfo;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.WindowManager;
+          import android.webkit.*;
+          import android.widget.Toast;
+          import androidx.webkit.WebViewAssetLoader;
+          import java.io.ByteArrayInputStream;
+          import java.io.ByteArrayOutputStream;
+          import java.io.InputStream;
+          import java.util.HashMap;
+
+          /** Trộn đề thi Online — bản Android. Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí */
+          public class MainActivity extends Activity {
+              static final String LOCAL = "https://appassets.androidplatform.net/assets/app/";
+              static final HashMap<String, String> MIME = new HashMap<>();
+              static {
+                  MIME.put("html", "text/html"); MIME.put("js", "text/javascript"); MIME.put("mjs", "text/javascript");
+                  MIME.put("css", "text/css"); MIME.put("json", "application/json"); MIME.put("webmanifest", "application/manifest+json");
+                  MIME.put("png", "image/png"); MIME.put("jpg", "image/jpeg"); MIME.put("jpeg", "image/jpeg"); MIME.put("svg", "image/svg+xml");
+                  MIME.put("pdf", "application/pdf"); MIME.put("docx", "application/octet-stream"); MIME.put("txt", "text/plain"); MIME.put("mp3", "audio/mpeg");
+              }
+              WebView web; String site; WebViewAssetLoader loader;
+              ValueCallback<Uri[]> fileCb; PermissionRequest pendingPerm;
+
+              @Override protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  site = BuildConfig.SITE_URL == null ? "" : BuildConfig.SITE_URL.trim();
+                  if (!site.startsWith("https://")) site = "";
+                  if (!site.isEmpty()) { site = site.replaceAll("[^/]*\\.html.*$", ""); if (!site.endsWith("/")) site += "/"; }
+                  loader = new WebViewAssetLoader.Builder().addPathHandler("/assets/", path -> {
+                      try {
+                          if (path.isEmpty() || path.endsWith("/")) path = path + "index.html";
+                          InputStream in = getAssets().open(path);
+                          String ext = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1).toLowerCase() : "";
+                          String mime = MIME.containsKey(ext) ? MIME.get(ext) : "application/octet-stream";
+                          if (path.endsWith("js/config.js")) {
+                              ByteArrayOutputStream o = new ByteArrayOutputStream(); byte[] buf = new byte[8192]; int n;
+                              while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                              o.write(("\nwindow.QUIZ_PUBLIC_URL = \"" + site + "\";\n").getBytes("UTF-8"));
+                              in = new ByteArrayInputStream(o.toByteArray());
+                          }
+                          return new WebResourceResponse(mime, mime.startsWith("text") || mime.contains("json") ? "utf-8" : null, in);
+                      } catch (Exception e) { return null; }
+                  }).build();
+                  web = new WebView(this);
+                  WebSettings s = web.getSettings();
+                  s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true); s.setDatabaseEnabled(true);
+                  s.setMediaPlaybackRequiresUserGesture(false); s.setAllowFileAccess(false); s.setTextZoom(100);
+                  s.setUserAgentString(s.getUserAgentString() + " TronDeThiApp/" + BuildConfig.VERSION_NAME + " Android");
+                  web.setWebViewClient(new WebViewClient() {
+                      @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) { return loader.shouldInterceptRequest(r.getUrl()); }
+                      @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                          String u = r.getUrl().toString();
+                          if (u.startsWith(LOCAL) || (!site.isEmpty() && u.startsWith(site)) || u.matches("^https://[^?#]+/thi\\.html\\?.*")) return false;
+                          try { startActivity(new Intent(Intent.ACTION_VIEW, r.getUrl())); } catch (Exception e) { }
+                          return true;
+                      }
+                      @Override public void doUpdateVisitedHistory(WebView v, String url, boolean reload) { secure(url); }
+                      @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
+                          if (r.isForMainFrame() && !site.isEmpty() && r.getUrl().toString().startsWith(site)) v.loadUrl(LOCAL + "index.html");
+                      }
+                  });
+                  web.setWebChromeClient(new WebChromeClient() {
+                      @Override public void onPermissionRequest(PermissionRequest req) {
+                          runOnUiThread(() -> {
+                              if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                  pendingPerm = req; requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 7);
+                              } else req.grant(req.getResources());
+                          });
+                      }
+                      @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams p) {
+                          if (fileCb != null) fileCb.onReceiveValue(null);
+                          fileCb = cb;
+                          try { Intent i = p.createIntent(); if (p.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); startActivityForResult(i, 8); }
+                          catch (Exception e) { fileCb = null; return false; }
+                          return true;
+                      }
+                  });
+                  web.setDownloadListener((url, ua, cd, mime, len) -> {
+                      if (url.startsWith("http")) { try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception e) { } }
+                      else Toast.makeText(this, "Tải file (Excel, sao lưu…) hãy dùng phần mềm trên máy tính.", Toast.LENGTH_LONG).show();
+                  });
+                  setContentView(web);
+                  Uri data = getIntent() != null ? getIntent().getData() : null;
+                  if (b != null) web.restoreState(b);
+                  else if (data != null && data.toString().startsWith("https://")) web.loadUrl(data.toString());
+                  else web.loadUrl(!site.isEmpty() && online() ? site + "index.html" : LOCAL + "index.html");
+              }
+              boolean online() { try { ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE); NetworkInfo n = cm.getActiveNetworkInfo(); return n != null && n.isConnected(); } catch (Exception e) { return true; } }
+              void secure(String url) {
+                  boolean exam = url != null && url.matches(".*/thi\\.html([?#].*)?$");
+                  runOnUiThread(() -> { if (exam) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE); else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE); });
+              }
+              @Override public void onRequestPermissionsResult(int code, String[] p, int[] r) {
+                  if (code == 7 && pendingPerm != null) { if (r.length > 0 && r[0] == PackageManager.PERMISSION_GRANTED) pendingPerm.grant(pendingPerm.getResources()); else pendingPerm.deny(); pendingPerm = null; }
+              }
+              @Override protected void onActivityResult(int code, int res, Intent data) {
+                  if (code == 8 && fileCb != null) {
+                      Uri[] out = null;
+                      if (res == RESULT_OK && data != null) {
+                          if (data.getClipData() != null) { int n = data.getClipData().getItemCount(); out = new Uri[n]; for (int i = 0; i < n; i++) out[i] = data.getClipData().getItemAt(i).getUri(); }
+                          else if (data.getData() != null) out = new Uri[]{data.getData()};
+                      }
+                      fileCb.onReceiveValue(out); fileCb = null;
+                  } else super.onActivityResult(code, res, data);
+              }
+              @Override protected void onSaveInstanceState(Bundle o) { super.onSaveInstanceState(o); web.saveState(o); }
+              @Override public void onBackPressed() { if (web.canGoBack()) web.goBack(); else super.onBackPressed(); }
+          }
+          EOF
+          # bo khoang trang dau dong do heredoc trong YAML
+          find $A -type f \( -name '*.gradle' -o -name '*.xml' -o -name '*.java' -o -name '*.properties' \) -exec sed -i 's/^          //' {} +
+          echo "SITE=$SITE  VER=$VER  CODE=$CODE"
+      - name: Build APK
+        working-directory: android
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          set +e
+          gradle assembleDebug --no-daemon 2>&1 | tee build.log
+          CODE=${PIPESTATUS[0]}
+          if [ $CODE -ne 0 ]; then grep -A 12 "What went wrong" build.log | head -20 | while IFS= read -r l; do echo "::error::$l"; done; grep -E "error:|ERROR:" build.log | head -10 | while IFS= read -r l; do echo "::error::$l"; done; fi
+          exit $CODE
+      - name: Doi ten APK
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          cp android/app/build/outputs/apk/debug/app-debug.apk TronDeThi-Android-$VER.apk
+      - uses: actions/upload-artifact@v5
+        with:
+          name: TronDeThi-Android
+          path: TronDeThi-Android-*.apk
           if-no-files-found: error
           retention-days: 30
