@@ -52,6 +52,7 @@ function route_(req) {
     case 'results': needTeacher_(req); return results_(req.examId);
     case 'gradeEssay': needTeacher_(req); return gradeEssay_(req.attemptId, req.scores);
     case 'deleteAttempt': needTeacher_(req); return deleteAttempt_(req.attemptId);
+    case 'grantRetake': needTeacher_(req); return grantRetake_(req.examId, req.keys || []);
     // ---- Học sinh ----
     case 'info': return { info: QC_publicInfo(openExam_(req.examId)), serverNow: Date.now() };
     case 'start': return start_(req);
@@ -199,6 +200,7 @@ function start_(req) {
     var sh = sheet_(SH_ATT, ATT_HEAD);
     var data = rows_(sh);
     var resume = null, done = 0, maxA = QC_maxAttempts(st);
+    if (maxA > 0) maxA += +(extraGet_(exam.id)[key] || 0);
     for (var i = 0; i < data.length; i++) {
       if (data[i][1] !== exam.id || data[i][9] !== key) continue;
       if (data[i][7] === 'Đã nộp') done++;
@@ -277,6 +279,7 @@ function submit_(req) {
     var outp = { score: null, submittedAt: now.getTime() };
     if (st.showScore !== false) { outp.score = g.score; outp.right = g.mcRight; outp.mcCount = g.mcCount; outp.essayPending = g.essayPending; outp.scale = +st.scale || 10; }
     outp.attemptNo = attemptNo; outp.maxAttempts = QC_maxAttempts(st);
+    if (outp.maxAttempts > 0) outp.maxAttempts += +(extraGet_(r[1])[r[9]] || 0);
     if (st.showScore !== false && g.skills) { outp.skills = g.skills; outp.toeic = g.toeic || null; }
     if (st.showReview) outp.review = QC_review(exam, paper, g);
     return outp;
@@ -291,7 +294,7 @@ function results_(examId) {
   var att = rows_(sheet_(SH_ATT, ATT_HEAD)).filter(function (r) { return r[1] === examId && r[7] !== 'Đã nộp'; }).map(function (r) {
     return { attemptId: r[0], hoTen: r[3], lop: r[4], mssv: r[5], startedAt: r[6] instanceof Date ? r[6].getTime() : r[6], idx: r[10], violations: r[13], lan: r[14] };
   });
-  return { results: res, inProgress: att, serverNow: Date.now() };
+  return { results: res, inProgress: att, extra: extraGet_(examId), serverNow: Date.now() };
 }
 
 function gradeEssay_(attemptId, scores) {
@@ -317,6 +320,19 @@ function deleteAttempt_(attemptId) {
     var x = findRow_(a, 1, attemptId); if (x > 0) a.deleteRow(x);
     var y = findRow_(r, 1, attemptId); if (y > 0) r.deleteRow(y);
     return { deleted: x > 0 || y > 0 };
+  });
+}
+
+/* Cho làm thêm lần (giáo viên bấm nút vàng): lưu số lần cộng thêm theo từng học sinh */
+function extraGet_(examId) {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('EXTRA_' + examId) || '{}') || {}; } catch (e) { return {}; }
+}
+function grantRetake_(examId, keys) {
+  return withLock_(function () {
+    var ex = extraGet_(examId), n = 0;
+    keys.forEach(function (k) { k = String(k || ''); if (!k) return; ex[k] = (+ex[k] || 0) + 1; n++; });
+    PropertiesService.getScriptProperties().setProperty('EXTRA_' + examId, JSON.stringify(ex));
+    return { granted: n, extra: ex };
   });
 }
 
@@ -372,7 +388,7 @@ function caiDat() {
  * core.js — Lõi trộn đề / chấm điểm (dùng chung cho trình duyệt và
  * máy chủ Google Apps Script). Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí
  * ===================================================================== */
-var QC_VERSION = '2.0';
+var QC_VERSION = '2.1';
 
 function QC_hash(str) {
   var h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0;
@@ -726,6 +742,7 @@ function QC_publicInfo(exam) {
     window: QC_window(st), maxAttempts: QC_maxAttempts(st), showReview: !!st.showReview, requireApp: !!st.requireApp,
     kind: exam.kind === 'en' ? 'en' : 'subject', audioPlays: st.audioPlays != null && st.audioPlays !== '' ? +st.audioPlays : 1,
     bkAuto: st.bkAuto !== false, bkLockL: !!st.bkLockL, bkLockSec: !!st.bkLockSec,
+    reLow: st.reLow === false ? 0 : (st.reLowPt != null && st.reLowPt !== '' ? +st.reLowPt : (+st.scale || 10) / 2),
     hasSpeak: paper.items.some(function (it) { return exam.banks[it.b].questions[it.q].type === 'speak'; }),
     hasAudio: paper.items.some(function (it) { var b = exam.banks[it.b], q = b.questions[it.q]; return !!(q.audio || (b.book && q.skill === 'L') || (q.g != null && b.groups && b.groups[q.g] && b.groups[q.g].audio)); }),
     booklet: paper.items.some(function (it) { return !!exam.banks[it.b].book; }),

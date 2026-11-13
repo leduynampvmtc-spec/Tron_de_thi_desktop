@@ -223,6 +223,7 @@
     $('#s_from').value = s.openFrom || ''; $('#s_to').value = s.openTo || ''; $('#s_end').value = s.endAt || '';
     const ma = QuizCore.maxAttempts(s);
     $('#s_unlim').checked = ma === 0; $('#s_maxA').value = ma || (s.maxAttempts > 0 ? s.maxAttempts : 1); $('#s_maxA').disabled = ma === 0;
+    if ($('#s_reLow')) { $('#s_reLow').checked = s.reLow !== false; $('#s_reLowPt').value = s.reLowPt != null && s.reLowPt !== '' ? s.reLowPt : (s.scale || 10) / 2; }
     $('#s_policy').value = s.scorePolicy || 'max'; $('#s_review').checked = !!s.showReview; $('#s_requireApp').checked = !!s.requireApp;
     if ($('#s_plays')) $('#s_plays').value = String(s.audioPlays != null && s.audioPlays !== '' ? s.audioPlays : 1);
     if ($('#s_toeic')) $('#s_toeic').checked = !!s.toeic;
@@ -284,6 +285,7 @@
       maxViolations: +$('#s_maxV').value || 0, openFrom: $('#s_from').value, openTo: $('#s_to').value, endAt: $('#s_end').value,
       openFromTs: tsOf($('#s_from').value), openToTs: tsOf($('#s_to').value), endAtTs: tsOf($('#s_end').value),
       maxAttempts: $('#s_unlim').checked ? 0 : Math.max(1, +$('#s_maxA').value || 1), unlimited: $('#s_unlim').checked,
+      reLow: $('#s_reLow') ? $('#s_reLow').checked : true, reLowPt: $('#s_reLowPt') && $('#s_reLowPt').value !== '' ? +$('#s_reLowPt').value : '',
       scorePolicy: $('#s_policy').value, showReview: $('#s_review').checked, requireApp: $('#s_requireApp').checked,
       navMode: $('#s_nav').value, freeTime: $('#s_ftime').value, totalMin: +$('#s_tmin').value || 0,
       audioPlays: $('#s_plays') ? +$('#s_plays').value : 1, toeic: $('#s_toeic') ? $('#s_toeic').checked : false,
@@ -524,6 +526,27 @@
     ].map(s => '<div class="stat"><b>' + s[1] + '</b><span>' + s[0] + '</span></div>').join('');
     const ip = curData.inProgress || [];
     $('#progressBox').innerHTML = ip.length ? '<div class="msg info" style="margin-top:12px"><b>Đang làm bài:</b> ' + ip.map(a => esc(a.hoTen) + ' (' + esc(a.lop) + ')' + (multi && a.lan ? ' lần ' + a.lan : '') + ' – câu ' + ((+a.idx || 0) + 1) + (a.violations ? ' <span class="pill bad">vi phạm ' + a.violations + '</span>' : '')).join(' · ') + '</div>' : '';
+    // Nút vàng "Cho làm thêm" cho em dưới mức điểm
+    const maxA0 = QuizCore.maxAttempts(exSt), extra = curData.extra || {};
+    const rePt = exSt.reLow === false ? null : (exSt.reLowPt != null && exSt.reLowPt !== '' ? +exSt.reLowPt : scale / 2);
+    const attK = (h, l, m) => QuizCore.normName(h) + '|' + QuizCore.normName(l) + '|' + QuizCore.normName(m);
+    const ipK = new Set(ip.map(a => attK(a.hoTen, a.lop, a.mssv)));
+    const reInfo = {}, lowList = [];
+    if (rePt != null && maxA0 > 0) agg.forEach(a => {
+      if (isNaN(a.score) || a.score >= rePt) return;
+      const k = attK(a.row['Họ và tên'], a.row['Lớp'], a.row['MSSV']);
+      const allowed = maxA0 + (+extra[k] || 0);
+      const st2 = ipK.has(k) ? 'doing' : a.count < allowed ? 'granted' : 'low';
+      reInfo[a.row['Mã lượt']] = { k, st: st2 };
+      if (st2 === 'low') lowList.push({ k, name: a.row['Họ và tên'], score: a.score });
+    });
+    if (lowList.length) $('#progressBox').innerHTML += '<div class="msg relow" style="margin-top:12px"><b>⚠ ' + lowList.length + ' em dưới ' + String(rePt).replace('.', ',') + ' điểm:</b> ' + lowList.map(x => esc(x.name) + ' (' + String(x.score).replace('.', ',') + ')').join(', ') +
+      '<div class="row" style="margin-top:8px"><button class="btn sm yel" id="reAll">Cho cả ' + lowList.length + ' em làm thêm 1 lần</button><span class="hint">hoặc bấm nút vàng ở từng dòng để chọn riêng em nào được làm thêm.</span></div></div>';
+    const reCell = (r) => { const x = reInfo[r['Mã lượt']]; if (!x) return ''; if (x.st === 'low') return '<button class="btn sm yel" data-re="' + esc(x.k) + '" title="Em dưới ' + rePt + ' điểm — bấm để cho em làm thêm 1 lần (giữ bài cũ)">Cho làm thêm</button>'; return '<span class="pill warn" title="Đã cho làm thêm">' + (x.st === 'doing' ? 'Đang làm lại' : 'Đã cho làm thêm') + '</span>'; };
+    const grant = async (keys, who) => {
+      if (!confirm('Cho ' + who + ' làm thêm 1 lần (đề trộn mới, bài cũ vẫn giữ)?')) return;
+      try { await api(conf().api, { action: 'grantRetake', key: conf().key, examId: cur, keys }); toast('Đã cho ' + who + ' làm thêm 1 lần — em mở lại link đề để làm', 'ok'); refreshResults(); } catch (e) { toast(e.message, 'bad'); }
+    };
     const hasEssay = res.some(r => r['Tự luận']);
     const skOf = (r) => { try { return JSON.parse(r['Kỹ năng'] || 'null') || null; } catch (e) { return null; } };
     const skCols = ['L', 'R', 'W', 'S'].filter(k => res.some(r => { const x = skOf(r); return x && x.s && x.s[k]; }));
@@ -534,12 +557,14 @@
         '<td class="num"><b>' + esc(r['Điểm']) + '</b>' + (multi && chosenIds.has(r['Mã lượt']) ? ' <span class="pill ok" title="Điểm được ghi nhận">' + (exSt.scorePolicy === 'avg' ? 'TB ' + agg.find(a => a.row === r).score : '✓') + '</span>' : '') + '</td>' + (multi ? '<td class="num">' + esc(r['Lần'] || '') + '</td>' : '') + skCell(r) + '<td class="num">' + esc(r['Số câu đúng']) + '/' + esc(r['Số câu TN']) + '</td>' +
         (hasEssay ? '<td>' + (r['Tự luận'] ? '<span class="pill ' + (/Chưa/.test(r['Tự luận']) ? 'warn' : 'ok') + '">' + esc(r['Tự luận']) + '</span>' : '') + '</td>' : '') +
         '<td>' + fmtDur(r['Thời gian làm (giây)']) + '</td><td class="num">' + (+r['Vi phạm'] ? '<span class="pill bad">' + r['Vi phạm'] + '</span>' : '0') + '</td><td>' + fmtTime(r['Nộp bài']) + '</td><td>' + esc(r['Ghi chú']) + '</td>' +
-        '<td class="row" style="flex-wrap:nowrap"><button class="btn sm" data-see="' + esc(r['Mã lượt']) + '">' + (r['Tự luận'] ? 'Chấm / xem' : 'Xem bài') + '</button><button class="btn sm danger" data-redo="' + esc(r['Mã lượt']) + '" title="Xóa bài này để học sinh làm lại">Cho làm lại</button></td></tr>').join('')
+        '<td class="row" style="flex-wrap:nowrap">' + reCell(r) + '<button class="btn sm" data-see=""' + esc(r['Mã lượt']) + '">' + (r['Tự luận'] ? 'Chấm / xem' : 'Xem bài') + '</button><button class="btn sm danger" data-redo="' + esc(r['Mã lượt']) + '" title="Xóa hẳn bài này để học sinh làm lại từ đầu">Xóa bài</button></td></tr>').join('')
         : '<tr><td colspan="12" class="muted">Chưa có bài nộp.</td></tr>');
     $$('[data-see]').forEach(b => b.onclick = () => seeAttempt(b.dataset.see));
+    $$('[data-re]').forEach(b => b.onclick = () => { const x = lowList.find(y => y.k === b.dataset.re); grant([b.dataset.re], 'em ' + (x ? x.name : '')); });
+    if ($('#reAll')) $('#reAll').onclick = () => grant(lowList.map(x => x.k), 'cả ' + lowList.length + ' em dưới ' + rePt + ' điểm');
     $$('[data-redo]').forEach(b => b.onclick = async () => {
       const r = res.find(x => x['Mã lượt'] === b.dataset.redo);
-      if (!confirm('Xóa bài làm của ' + r['Họ và tên'] + ' để em làm lại?')) return;
+      if (!confirm('Xóa hẳn bài làm của ' + r['Họ và tên'] + ' (mất điểm lần này) để em làm lại?\n\nMuốn giữ bài cũ thì dùng nút vàng "Cho làm thêm".')) return;
       try { await api(conf().api, { action: 'deleteAttempt', key: conf().key, attemptId: b.dataset.redo }); refreshResults(); } catch (e) { toast(e.message, 'bad'); }
     });
   }

@@ -821,6 +821,7 @@
       const w = info.window || {};
       const canAgain = !PREVIEW && r.attemptNo && (!r.maxAttempts || r.attemptNo < r.maxAttempts) && !(w.end && srvNow() >= w.end) && !(w.to && srvNow() > w.to);
       if (canAgain) h += '<button class="btn accent" id="again" style="margin-top:6px">Làm lại lần ' + (r.attemptNo + 1) + ' (đề trộn mới)</button>';
+      else if (!PREVIEW && r.score != null && info.reLow && +r.score < info.reLow && r.maxAttempts) h += '<div class="msg warn" style="margin-top:8px;text-align:left">Điểm của em dưới ' + String(info.reLow).replace('.', ',') + '. Nếu giáo viên cho <b>làm thêm 1 lần</b>, em mở lại đúng link đề này để làm bài mới.</div>';
     }
     h += '</div>';
     if (r.review && S.book) {

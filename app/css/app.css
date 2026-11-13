@@ -217,3 +217,7 @@ img.drvimg { max-width: 100%; height: auto; display: block; margin: 6px auto; bo
 .msg.multi .mtests { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .batchrep { margin-top: 8px; display: grid; gap: 4px; }
 .batchrep .msg { margin: 0; padding: 6px 10px; font-size: .88rem; }
+
+.btn.yel { background: #f5b301; border-color: #e0a200; color: #3a2a00; font-weight: 600; }
+.btn.yel:hover { background: #ffc21a; }
+.msg.relow { background: #fff6d6; border: 1px solid #f0c94a; color: #5a4300; }
