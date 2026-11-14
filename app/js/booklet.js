@@ -368,6 +368,45 @@
       setTimeout(() => fin(0), 10000); a.src = u;
     });
   }
+  /** v2.2 — Các quãng lặng dài (≥ minDur giây) trong 1 file nghe: [{a, b}] (giây). Giải mã ở 8 kHz mono cho nhẹ máy. */
+  async function findPauses(file, minDur) {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!OAC) return null;
+    let buf;
+    try { const ac = new OAC(1, 2, 8000); const ab = await file.arrayBuffer(); buf = await new Promise((res, rej) => { const pr = ac.decodeAudioData(ab, res, rej); if (pr && pr.then) pr.then(res, rej); }); } catch (e) { return null; }
+    const sr = buf.sampleRate, W = Math.round(sr * 0.05), nch = buf.numberOfChannels, chs = []; for (let c = 0; c < nch; c++) chs.push(buf.getChannelData(c));
+    const nw = Math.floor(buf.length / W); if (nw < 40) return null;
+    const env = new Float32Array(nw);
+    for (let i = 0; i < nw; i++) { let e = 0; const o = i * W; for (let c = 0; c < nch; c++) { const d = chs[c]; for (let j = 0; j < W; j += 2) { const v = d[o + j]; e += v * v; } } env[i] = Math.sqrt(e / (nch * W / 2)); }
+    const srt = Array.from(env).sort((x, y) => x - y), loud = srt[Math.floor(nw * 0.95)], noise = srt[Math.floor(nw * 0.03)];
+    if (!(loud > 0)) return null;
+    const thr = Math.max(loud * 0.05, noise * 3);
+    const q = new Uint8Array(nw); for (let i = 0; i < nw; i++) q[i] = env[i] < thr ? 1 : 0;
+    // tiếng lách tách rất ngắn (≤ 0,1 giây) nằm giữa quãng lặng thì coi như lặng
+    for (let i = 1; i < nw - 2; i++) if (!q[i] && q[i - 1] && (q[i + 1] || q[i + 2])) q[i] = 1;
+    const out = []; let st0 = -1;
+    for (let i = 0; i <= nw; i++) {
+      if (i < nw && q[i]) { if (st0 < 0) st0 = i; }
+      else if (st0 >= 0) { if ((i - st0) * 0.05 >= minDur) out.push({ a: st0 * 0.05, b: i * 0.05 }); st0 = -1; }
+    }
+    out.dur = buf.duration;
+    return out;
+  }
+  /** v2.2 — Mốc lật trang cho file nghe LIỀN của 1 Part (hoặc cả phần Nghe): sau mỗi câu có quãng lặng để tô đáp án
+   *  (Part 1–2 ≈ 5 giây, Part 3–4 ≈ 8 giây) → đếm quãng lặng để biết lúc bắt đầu từng câu / từng đoạn hội thoại.
+   *  Số quãng lặng không khớp số câu thì trả null (không tự lật trong Part, như bản cũ). */
+  async function pauseMarks(file, nums, parts) {
+    if (!nums || nums.length < 2) return null;
+    const ps = await findPauses(file, 3.5); if (!ps) return null;
+    const inner = ps.filter(x => x.b < ps.dur - 0.4), N = nums.length;
+    if (inner.length !== N && inner.length !== N - 1) return null;
+    const mk = [{ n: nums[0], t: 0 }];
+    for (let i = 1; i < N; i++) {
+      const n = nums[i], pt = partOf(parts, n);
+      if (pt >= 3) { const a0 = nums.filter(x => partOf(parts, x) === pt)[0]; if ((n - a0) % 3) continue; }   // Part 3–4: chỉ lấy câu đầu mỗi đoạn (3 câu / đoạn)
+      mk.push({ n, t: Math.max(0, Math.round((inner[i - 1].b - 0.3) * 10) / 10) });
+    }
+    return mk.length > 1 ? mk : null;
+  }
   /** File "câu đầu mỗi trang": dòng "LC …: ,1,3,5" và "RC …: 101,109" */
   function parseFirstLists(txt) {
     const out = {};
@@ -639,7 +678,16 @@
         const list = [];
         for (const pt of ['1', '2', '3', '4', 'all']) {
           const g = st.auds.filter(a => a.part === pt);
-          if (g.length === 1) list.push(g[0]);
+          if (g.length === 1) {
+            list.push(g[0]);
+            // v2.2 — file liền cho cả Part: tìm mốc lật trang theo các quãng lặng sau mỗi câu
+            if (pt) {
+              up('Đang tìm mốc lật trang trong file nghe ' + (pt === 'all' ? '' : 'Part ' + pt) + '…');
+              const ns = nums.filter(n => { const p0 = partOf(parts, n); return pt === 'all' ? p0 >= 1 && p0 <= 4 : String(p0) === pt; });
+              let mk = null; try { mk = await pauseMarks(g[0].file, ns, parts); } catch (e) { mk = null; }
+              if (mk) (bank.book.marks = bank.book.marks || {})[pt] = mk;
+            }
+          }
           else if (g.length > 1) {
             up('Đang gộp ' + g.length + ' file nghe Part ' + pt + '…');
             g.sort((x, y) => x.num - y.num || x.file.name.localeCompare(y.file.name));
@@ -703,6 +751,13 @@
   }
 
   /* ------------------------------ xem / sửa ------------------------------ */
+  /** v2.2 — Part nào đã có mốc để học sinh được tự lật trang theo file nghe */
+  function markNote(b) {
+    const ks = Object.keys((b.book && b.book.parts) || {}); if (!ks.length) return '';
+    const mk = b.book.marks || {};
+    return '<p class="hint" id="bkMarkNote">Tự lật trang theo file nghe: ' + ks.sort().map(k => (k === 'all' ? 'Toàn bộ' : 'Part ' + k) + (mk[k] && mk[k].length > 1 ? ' <b style="color:var(--ok)">✓ ' + mk[k].length + ' mốc</b>' : ' <b style="color:var(--bad)">chưa có mốc</b>')).join(' · ') +
+      '. Part chưa có mốc thì trang chỉ tự lật khi sang Part mới (nạp lại bộ đề bằng bản 2.2 để tạo mốc).</p>';
+  }
   function view(b, ctx) {
     const parts = parseParts(b.book.partsTxt || STD_PARTS);
     const render = () => {
@@ -710,7 +765,7 @@
       b.questions.forEach((q, qi) => { (byPart[q.part] = byPart[q.part] || []).push(qi); });
       ctx.modal('<div class="row"><h2 style="margin:0">' + esc(b.name) + '</h2><span class="pill">Đề nguyên bộ · ' + b.book.pages.length + ' trang · ' + b.questions.length + ' câu</span><span class="spacer"></span><button class="btn sm" id="mClose">Đóng</button></div>' +
         '<p class="hint">Bấm vào chữ cái để sửa đáp án đúng. Số dưới ảnh trang = câu đầu tiên in trên trang (dùng để hiện phiếu trả lời đúng trang cho học sinh).</p>' +
-        ctx.audioPanel(b) +
+        ctx.audioPanel(b) + markNote(b) +
         '<h3>Đáp án</h3>' + Object.keys(byPart).sort((x, y) => x - y).map(pt => '<div class="keypart"><b>Part ' + pt + '</b> <span class="hint">' + (pt <= 4 ? 'Nghe' : 'Đọc') + ' · câu ' + b.questions[byPart[pt][0]].num + '–' + b.questions[byPart[pt][byPart[pt].length - 1]].num + '</span><div class="keygrid">' +
           byPart[pt].map(qi => { const q = b.questions[qi]; return '<div class="krow' + (q.correct.length ? '' : ' bad') + '"><span class="kn">' + q.num + '</span>' + q.options.map((_, oi) => '<button class="kb' + (q.correct.includes(oi) ? ' on' : '') + '" data-kq="' + qi + '" data-ko="' + oi + '">' + L[oi] + '</button>').join('') + '<span class="kp" title="Trang">' + (q.page != null ? 'tr.' + (q.page + 1) : '—') + '</span></div>'; }).join('') + '</div></div>').join('') +
         '<h3>Trang đề</h3>' + quickLists(b.book.pages) + '<div class="pgrid">' + b.book.pages.map((p, i) => '<div class="pcell">' + (p.thumb ? '<img src="' + p.thumb + '" alt="">' : '<div class="pthumb">' + (i + 1) + '</div>') + '<div class="hint">' + (p.sec === 'L' ? 'LC' : p.sec === 'R' ? 'RC' : 'PDF') + ' · trang ' + p.n + (p.id ? '' : ' · <b style="color:var(--bad)">chưa tải</b>') + '</div><input type="number" min="1" data-first="' + i + '" value="' + (p.first || '') + '" placeholder="câu đầu"></div>').join('') + '</div>');

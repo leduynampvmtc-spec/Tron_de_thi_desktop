@@ -445,7 +445,7 @@
   const BA = { el: null, k: null, lastSave: 0 };
   const IMGC = {};
   /* v1.9 — tùy chọn của giáo viên: tự lật trang theo file nghe, khóa quay lại trang / phần Nghe */
-  const LOCKL = () => !!(info && info.bkLockL), LOCKSEC = () => !!(info && info.bkLockSec), AUTOPG = () => !(info && info.bkAuto === false);
+  const LOCKL = () => !!(info && info.bkLockL), LOCKSEC = () => !!(info && info.bkLockSec), AUTOPG = () => !(info && info.bkAuto === false) && !(S.bk && S.bk.auto === false);
   const lIdx = (pi) => (S.secPages && S.secPages.L ? S.secPages.L.indexOf(pi) : -1);
   function pageAllowed(sec, pi) {
     if (sec !== 'L') return true;
@@ -492,7 +492,7 @@
       '<div class="wrap bkwrap">' +
       (S.secs.length > 1 ? '<div class="bktabs">' + S.secs.map(k => '<button class="bktab" data-sec="' + k + '">' + (k === 'L' ? '🎧 Listening · câu ' + rng(nL) : '📖 Reading · câu ' + rng(nR)) + '</button>').join('') + '</div>' : '') +
       '<div class="card bkaud hide" id="bkAud"></div>' +
-      '<div class="bkmain"><div class="card bkview"><div class="bkbar"><button class="btn sm" id="pgPrev">◀</button><select id="pgSel"></select><button class="btn sm" id="pgNext">▶</button><span class="spacer"></span><button class="btn sm" id="zOut" title="Thu nhỏ">−</button><button class="btn sm" id="zIn" title="Phóng to">+</button></div><div class="bkimg" id="bkImg"></div></div>' +
+      '<div class="bkmain"><div class="card bkview"><div class="bkbar"><button class="btn sm" id="pgPrev">◀</button><select id="pgSel"></select><button class="btn sm" id="pgNext">▶</button><span class="spacer"></span>' + (info.bkAuto !== false && S.secs.includes('L') ? '<button class="btn sm bkauto" id="autoBtn" title="Bật / tắt tự lật trang theo file nghe"></button>' : '') + '<button class="btn sm" id="zOut" title="Thu nhỏ">−</button><button class="btn sm" id="zIn" title="Phóng to">+</button></div><div class="bkimg" id="bkImg"></div></div>' +
       '<div class="card bksheet"><div class="row" style="margin-bottom:6px"><b id="shTitle">Phiếu trả lời</b><span class="spacer"></span><button class="btn sm" id="shAll">Phiếu đầy đủ</button></div><div id="bkSheet"></div><div class="bknav"><button class="btn" id="pgPrev2">← Trang trước</button><button class="btn primary" id="pgNext2">Trang sau →</button></div></div></div>' +
       '<div class="card hide" id="palCard"><div class="row" style="margin-bottom:8px"><b>Phiếu trả lời đầy đủ</b><span class="spacer"></span><span class="hint" style="margin:0"><span class="lg ans"></span> đã chọn <span class="lg"></span> chưa chọn</span></div><div class="pal bkpal" id="pal"></div></div>' +
       '<div style="max-width:860px;margin:0 auto 30px">' + QA.AUTHOR_HTML + '</div></div>';
@@ -504,6 +504,8 @@
     $('#zIn').onclick = () => { S.bk.zoom = Math.min(3, (S.bk.zoom || 1) + 0.5); applyZoom(); saveLocal(); };
     $('#zOut').onclick = () => { S.bk.zoom = Math.max(1, (S.bk.zoom || 1) - 0.5); applyZoom(); saveLocal(); };
     $('#shAll').onclick = () => { const c = $('#palCard'); c.classList.toggle('hide'); bkPalette(); if (!c.classList.contains('hide')) c.scrollIntoView({ behavior: 'smooth' }); };
+    const ab = $('#autoBtn');
+    if (ab) { const paintA = () => { const on = S.bk.auto !== false; ab.textContent = on ? '⟳ Tự lật: Bật' : '⟳ Tự lật: Tắt'; ab.classList.toggle('on', on); }; ab.onclick = () => { S.bk.auto = S.bk.auto === false; BA.mark = null; paintA(); saveLocal(); QA.toast(S.bk.auto ? 'Đã bật tự lật trang theo file nghe' : 'Đã tắt tự lật trang — em tự bấm Trang sau', 'ok'); }; paintA(); }
     const mb = $('#musicBtn');
     if (mb) { const paintM = () => { mb.textContent = QA.Music.muted() ? '🔇 Nhạc' : '🔊 Nhạc'; }; mb.onclick = () => { QA.Music.setMuted(!QA.Music.muted()); LS.set('musicMuted', QA.Music.muted()); if (!QA.Music.playing()) QA.Music.start(info.music.url, info.music.vol); paintM(); }; paintM(); }
     startTotalTimer();
@@ -698,7 +700,15 @@
       if (BA.el !== el) return;
       BA.el = null; BA.k = null; S.bk.apos = null; saveLocal();
       const seq = audSeq(), nk = seq[seq.indexOf(k) + 1];
-      if (nk && nk[0] !== '!' && !(S.plays['P' + nk] > 0) && running) playPart(nk, 0); else paintAudio();
+      if (nk && nk[0] !== '!' && !(S.plays['P' + nk] > 0) && running) { playPart(nk, 0); return; }
+      paintAudio();
+      // v2.2 — nghe hết Part cuối: tự lật sang trang đầu phần Reading (như lúc "Go on to the Reading test")
+      if (running && AUTOPG() && S.bk.sec === 'L' && S.secs.includes('R') && seq.indexOf(k) === seq.length - 1 && seq.every(x => x[0] === '!' || S.plays['P' + x] > 0)) {
+        $('#modal').classList.remove('on');
+        S.bk.pR = null;
+        switchSec('R', false, true); window.scrollTo({ top: 0, behavior: 'smooth' });
+        QA.toast('Đã hết phần Nghe — chuyển sang phần Đọc (Reading)', 'ok');
+      }
     };
     el.onerror = async () => {
       if (BA.el !== el) return;

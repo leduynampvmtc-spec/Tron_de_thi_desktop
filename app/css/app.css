@@ -176,6 +176,9 @@ body.bookmode .wrap.bkwrap { max-width: 1280px; }
 .bkbar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .bkbar select { width: auto; flex: 1 1 auto; min-width: 0; max-width: 300px; padding: 6px 8px; }
 .bkbar .btn { flex: none; }
+.bkbar .bkauto { white-space: nowrap; }
+.bkbar .bkauto.on { border-color: var(--brand-2); color: var(--brand-2); font-weight: 700; }
+@media (max-width: 520px) { .bkbar { flex-wrap: wrap; } .bkbar select { max-width: none; } }
 .bkimg { overflow: auto; max-height: calc(100vh - 150px); border: 1px solid var(--line); border-radius: 8px; background: #fff; -webkit-overflow-scrolling: touch; }
 .bkimg img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .bkimg img.err { min-height: 160px; }
