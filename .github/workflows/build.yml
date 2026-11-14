@@ -287,3 +287,39 @@ jobs:
           path: TronDeThi-Android-*.apk
           if-no-files-found: error
           retention-days: 30
+
+  # v2.2 — Đưa bản cài lên mục Releases (ai cũng tải được, không cần đăng nhập, không hết hạn).
+  # Tên file cố định nên link tải không đổi giữa các phiên bản:
+  #   https://github.com/<tài khoản>/<repo>/releases/latest/download/TronDeThi-CaiDat-Windows.exe  (…-ChayNgay-Windows.exe,
+  #   TronDeThi-Mac-arm64.dmg, TronDeThi-Mac-x64.dmg, TronDeThi-Android.apk, Huong_dan_su_dung_Tron_de_thi_Online.pdf)
+  release:
+    needs: [windows, mac, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Lay cac ban cai vua dong goi
+        run: gh run download "$GITHUB_RUN_ID" --dir art
+      - name: Dua len Releases
+        run: |
+          set -e
+          VER=$(node -p "require('./package.json').version")
+          TAG="v$VER"
+          mkdir -p out
+          for f in art/*/*; do
+            b=$(basename "$f")
+            case "$b" in *.exe|*.dmg|*.zip|*.apk) cp "$f" "out/${b/-$VER/}";; esac
+          done
+          [ -f app/mau/Huong_dan_su_dung_Tron_de_thi_Online.pdf ] && cp app/mau/Huong_dan_su_dung_Tron_de_thi_Online.pdf out/
+          ls -la out
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --latest --title "Tron de thi Online $VER" \
+              --notes "Ban cai dat Tron de thi Online $VER: Windows (.exe), Mac (.dmg / .zip), Android (.apk) va file huong dan su dung (PDF). Phan mem: Le Duy Nam - GV Truong Cao dang Dau khi."
+          fi
+          gh release upload "$TAG" out/* --clobber
+          gh release edit "$TAG" --latest
