@@ -28,7 +28,7 @@
     <p style="margin-top:0">Để dùng phần mềm, mỗi thầy/cô cần <b>1 Google Sheet riêng</b> làm “máy chủ” (nơi lưu đề, phát đề cho từng học sinh, chấm điểm và lưu kết quả). Việc này chỉ làm <b>1 lần</b>, sau đó dùng cho mọi bài, mọi lớp.</p>
     <div class="msg info"><b>Trang chủ 2 trong 1:</b> mở phần mềm (web, Windows, Mac, Android) sẽ thấy 2 ô — <b>Sổ từ vựng TOEIC</b> (tự học từ vựng, ngữ pháp, đọc hiểu, tra từ) và <b>Trộn đề thi Online</b> (giáo viên ra đề, học sinh dán link làm bài). Nút ⌂ để quay về trang chủ.</div>
     <div class="msg info">Chưa cài Google Sheet vẫn dùng được nút <b>“Xem thử như học sinh”</b> để kiểm tra đề ngay trên máy.</div>
-    <div class="msg info row" style="justify-content:space-between"><span>Bản <b>hướng dẫn đầy đủ có hình minh họa</b> (PDF, 32 trang) để in hoặc gửi đồng nghiệp.</span><a class="btn sm primary" href="mau/Huong_dan_su_dung_Tron_de_thi_Online.pdf" download>Tải hướng dẫn PDF</a></div>
+    <div class="msg info row" style="justify-content:space-between"><span>Bản <b>hướng dẫn đầy đủ có hình minh họa</b> (PDF, 33 trang) để in hoặc gửi đồng nghiệp.</span><a class="btn sm primary" href="mau/Huong_dan_su_dung_Tron_de_thi_Online.pdf" download>Tải hướng dẫn PDF</a></div>
   </div>
 
   <div class="card">
@@ -47,7 +47,7 @@
         Bấm <b>Triển khai</b> → sao chép <b>URL ứng dụng web</b> (kết thúc bằng <code>/exec</code>).</li>
       <li>Mở <a href="giaovien.html">Trang giáo viên</a> → mục <b>Cài đặt máy chủ</b> → dán URL và mật khẩu → bấm <b>Lưu &amp; kiểm tra kết nối</b>. Thấy “Kết nối tốt — mật khẩu đúng” là xong.</li>
     </ol>
-    <div class="msg bad"><b>Cập nhật bản 2.2 (14/11/2026):</b> thầy/cô đã cài từ trước cần <b>dán đè mã Code.gs mới</b> (nút “Sao chép toàn bộ mã” ở trên) → <b>Lưu</b> → <b>Triển khai → Quản lý các tùy chọn triển khai → ✎ → Phiên bản mới → Triển khai</b>. Mở địa chỉ Web App (…/exec) thấy <code>"version":"2.2"</code> là xong. Trang giáo viên → <b>Cài đặt máy chủ → Kiểm tra kết nối</b> cũng báo nếu máy chủ còn bản cũ.</div>
+    <div class="msg bad"><b>Cập nhật bản 2.3 (16/11/2026):</b> thầy/cô đã cài từ trước cần <b>dán đè mã Code.gs mới</b> (nút “Sao chép toàn bộ mã” ở trên) → <b>Lưu</b> → <b>Triển khai → Quản lý các tùy chọn triển khai → ✎ → Phiên bản mới → Triển khai</b>. Mở địa chỉ Web App (…/exec) thấy <code>"version":"2.3"</code> là xong. Trang giáo viên → <b>Cài đặt máy chủ → Kiểm tra kết nối</b> cũng báo nếu máy chủ còn bản cũ.</div>
     <div class="msg warn">Chỉ cần <b>1 bản triển khai duy nhất</b>. Không tạo triển khai mới cho mỗi bài kiểm tra. Khi có bản cập nhật: dán đè mã mới → <b>Triển khai → Quản lý các tùy chọn triển khai → chọn bản đang dùng → ✎ → Phiên bản mới → Triển khai</b> (URL giữ nguyên, link đã gửi vẫn dùng được).</div>
     <div class="msg info"><b>Từ bản 1.6 (có đề Tiếng Anh)</b>: sau khi dán mã mới, chọn hàm <b>caiDat</b> → <b>Chạy</b> một lần và bấm <b>Cho phép</b> để cấp thêm quyền <b>Google Drive</b> (lưu file nghe và bản ghi âm), rồi mới tạo <b>Phiên bản mới</b>.</div>
     <p>Kết quả lưu trong 3 trang tính của Google Sheet: <b>DeThi</b> (các đề), <b>LuotThi</b> (học sinh đang làm), <b>KetQua</b> (điểm). Đáp án chỉ nằm trên máy chủ, học sinh không xem được.</p>
@@ -84,6 +84,8 @@
       <li><b>Nhạc nền</b> (không bắt buộc, cuối mục Cài đặt làm bài): dán link YouTube (video cho phép nhúng), link Google Drive (file chia sẻ “Bất kỳ ai có đường liên kết”) hoặc link file .mp3 → bấm <b>Nghe thử</b> để kiểm tra → chọn âm lượng. Nhạc phát khi học sinh bấm “Bắt đầu làm bài”, lặp lại đến khi nộp; học sinh có nút <b>🔊 Nhạc</b> để tắt/bật.</li>
       <li>Bấm <b>Xem thử như học sinh</b> để kiểm tra, rồi <b>Lưu đề lên máy chủ &amp; tạo link</b> → <b>Sao chép</b> link → gửi qua Zalo / Teams / Email. Mỗi học sinh mở link, nhập <b>Họ và tên, Lớp</b> rồi nhận 1 đề trộn riêng.</li>
       <li>Tab <b>3. Kết quả</b>: xem điểm trực tiếp, ai đang làm câu nào, số lần vi phạm; chấm câu tự luận; <b>Đóng đề</b> khi hết giờ; nút <b style="color:#a86b00">vàng “Cho làm thêm”</b> cạnh em dưới 5 điểm (bấm thì em được làm thêm 1 lần, giữ bài cũ); <b>Xóa bài</b> nếu cần em làm lại từ đầu; <b>Xuất Excel</b> bảng điểm.</li>
+      <li><b>Nộp bài khi chưa đến nửa thời gian</b> (bản 2.3): em nào nộp khi chưa làm đến một nửa thời gian của bài thì bảng hiện khung vàng và nút <b style="color:#a86b00">⏱ Nộp sớm?</b> ở dòng của em. Bấm vào, phần mềm hỏi thầy/cô cho bao nhiêu điểm: <b>1 · Cho 0 điểm</b>, <b>2 · Cho một nửa số điểm</b>, hoặc <b>Giữ nguyên điểm bài làm</b>. Điểm bài làm vẫn được ghi lại ở cột Ghi chú, đổi lại lúc nào cũng được. Đề không giới hạn thời gian thì không nhắc.</li>
+      <li><b>Tên trùng nhau</b> (bản 2.3): ở bảng kết quả và file Excel, tên <span class="dupR" style="padding:1px 6px;border-radius:5px">tô đỏ</span> là tên trùng nhau mà số lần làm đều là 1 (có thể một em làm 2 lần, ghi khác lớp / MSSV); tên <span class="dupY" style="padding:1px 6px;border-radius:5px">tô vàng</span> là số lần làm từ 2 trở lên. Trong file Excel, cột <b>STT</b> tự đánh lại khi thầy/cô xóa bớt hàng, và xóa hàng trùng thì hết đỏ.</li>
     </ol>
   </div>
   <div class="card">

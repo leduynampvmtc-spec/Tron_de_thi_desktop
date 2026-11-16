@@ -13,7 +13,7 @@ var TEACHER_KEY = 'PVCollege@2026';
 var SH_EXAM = 'DeThi', SH_ATT = 'LuotThi', SH_RES = 'KetQua';
 var EXAM_HEAD = ['Mã đề', 'Tiêu đề', 'Loại bài', 'Môn học/Mô đun', 'Lớp', 'Trạng thái', 'Tạo lúc', 'Cập nhật', 'Số phần JSON'];
 var ATT_HEAD = ['Mã lượt', 'Mã đề', 'Seed', 'Họ và tên', 'Lớp', 'MSSV', 'Bắt đầu', 'Trạng thái', 'Nộp lúc', 'Khóa', 'Câu hiện tại', 'Bắt đầu câu', 'Tạm lưu', 'Vi phạm', 'Lần'];
-var RES_HEAD = ['Mã lượt', 'Mã đề', 'Họ và tên', 'Lớp', 'MSSV', 'Điểm', 'Số câu đúng', 'Số câu TN', 'Điểm TN đạt', 'Điểm TL đạt', 'Tổng điểm tối đa', 'Tự luận', 'Bắt đầu', 'Nộp bài', 'Thời gian làm (giây)', 'Vi phạm', 'Ghi chú', 'Chi tiết', 'Điểm TL', 'Lần', 'Kỹ năng'];
+var RES_HEAD = ['Mã lượt', 'Mã đề', 'Họ và tên', 'Lớp', 'MSSV', 'Điểm', 'Số câu đúng', 'Số câu TN', 'Điểm TN đạt', 'Điểm TL đạt', 'Tổng điểm tối đa', 'Tự luận', 'Bắt đầu', 'Nộp bài', 'Thời gian làm (giây)', 'Vi phạm', 'Ghi chú', 'Chi tiết', 'Điểm TL', 'Lần', 'Kỹ năng', 'Điểm gốc', 'Nộp sớm'];
 var CHUNK = 45000;
 
 function doGet(e) {
@@ -53,6 +53,7 @@ function route_(req) {
     case 'gradeEssay': needTeacher_(req); return gradeEssay_(req.attemptId, req.scores);
     case 'deleteAttempt': needTeacher_(req); return deleteAttempt_(req.attemptId);
     case 'grantRetake': needTeacher_(req); return grantRetake_(req.examId, req.keys || []);
+    case 'fastScore': needTeacher_(req); return fastScore_(req.attemptIds || [], req.mode);
     // ---- Học sinh ----
     case 'info': return { info: QC_publicInfo(openExam_(req.examId)), serverNow: Date.now() };
     case 'start': return start_(req);
@@ -68,7 +69,7 @@ function route_(req) {
 }
 
 /* ------------------------------ Sheet helpers ------------------------------ */
-var TEXT_COLS = { DeThi: [1, 2, 3, 4, 5], LuotThi: [1, 2, 3, 4, 5, 6, 10, 13], KetQua: [1, 2, 3, 4, 5, 12, 17, 18, 19] };
+var TEXT_COLS = { DeThi: [1, 2, 3, 4, 5], LuotThi: [1, 2, 3, 4, 5, 6, 10, 13], KetQua: [1, 2, 3, 4, 5, 12, 17, 18, 19, 23] };
 function sheet_(name, head) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(name);
@@ -307,10 +308,12 @@ function gradeEssay_(attemptId, scores) {
     var det = JSON.parse(r[17]);
     var paper = QC_buildPaper(exam, det.seed);
     var g = QC_grade(exam, paper, det.answers, scores || {});
-    resSh.getRange(rr, 6, 1, 7).setValues([[g.score, g.mcRight, g.mcCount, g.mcEarned, g.essayEarned, g.max, g.essayPending ? 'Chưa chấm ' + g.essayPending + ' câu' : 'Đã chấm']]);
+    var fm = String(r[22] || ''), shown = g.score; // bài nộp sớm đã được giáo viên xử lý: giữ cách xử lý khi chấm lại
+    if (fm) { shown = fastApply_(g.score, fm, exam.settings || {}); resSh.getRange(rr, 22).setValue(g.score); resSh.getRange(rr, 17).setValue(fastNote_(r[16], fm, g.score)); }
+    resSh.getRange(rr, 6, 1, 7).setValues([[shown, g.mcRight, g.mcCount, g.mcEarned, g.essayEarned, g.max, g.essayPending ? 'Chưa chấm ' + g.essayPending + ' câu' : 'Đã chấm']]);
     resSh.getRange(rr, 19).setValue(JSON.stringify(scores || {}));
     if (g.skills) resSh.getRange(rr, 21).setValue(JSON.stringify({ s: g.skills, t: g.toeic || null }));
-    return { score: g.score };
+    return { score: shown };
   });
 }
 
@@ -320,6 +323,44 @@ function deleteAttempt_(attemptId) {
     var x = findRow_(a, 1, attemptId); if (x > 0) a.deleteRow(x);
     var y = findRow_(r, 1, attemptId); if (y > 0) r.deleteRow(y);
     return { deleted: x > 0 || y > 0 };
+  });
+}
+
+/* Nộp bài khi chưa đến nửa thời gian: giáo viên chọn 1) cho 0 điểm, 2) cho một nửa số điểm, hoặc giữ nguyên.
+ * Cột "Điểm gốc" giữ điểm bài làm, cột "Nộp sớm" ghi cách xử lý (Cho 0 điểm | Cho nửa điểm | Giữ điểm), cột "Điểm" là điểm ghi nhận. */
+var FAST_MODE = { zero: 'Cho 0 điểm', half: 'Cho nửa điểm', keep: 'Giữ điểm' };
+function fastApply_(orig, fm, st) {
+  orig = +orig || 0;
+  if (fm === FAST_MODE.zero) return 0;
+  if (fm === FAST_MODE.half) return QC_round(orig / 2, st.round || 0.1);
+  return orig;
+}
+function fastNote_(note, fm, orig) {
+  var parts = String(note || '').split('; ').filter(function (x) { return x && x.indexOf('Nộp sớm') !== 0; });
+  var d = String(orig).replace('.', ',');
+  if (fm === FAST_MODE.zero) parts.push('Nộp sớm (chưa đến nửa thời gian): cho 0 điểm, điểm bài làm ' + d);
+  else if (fm === FAST_MODE.half) parts.push('Nộp sớm (chưa đến nửa thời gian): cho một nửa số điểm, điểm bài làm ' + d);
+  else if (fm) parts.push('Nộp sớm (chưa đến nửa thời gian): giữ nguyên điểm');
+  return parts.join('; ');
+}
+function fastScore_(ids, mode) {
+  var fm = FAST_MODE[mode];
+  if (!fm) throw new Error('Cách xử lý bài nộp sớm không hợp lệ');
+  return withLock_(function () {
+    var resSh = sheet_(SH_RES, RES_HEAD), exams = {}, out = [];
+    ids.forEach(function (id) {
+      var rr = findRow_(resSh, 1, id);
+      if (rr < 0) return;
+      var r = resSh.getRange(rr, 1, 1, RES_HEAD.length).getValues()[0];
+      var st = (exams[r[1]] || (exams[r[1]] = loadExam_(r[1]))).settings || {};
+      var orig = String(r[22] || '') ? +r[21] || 0 : +r[5] || 0;
+      var sc = fastApply_(orig, fm, st);
+      resSh.getRange(rr, 6).setValue(sc);
+      resSh.getRange(rr, 17).setValue(fastNote_(r[16], fm, orig));
+      resSh.getRange(rr, 22, 1, 2).setValues([[orig, fm]]);
+      out.push({ attemptId: id, score: sc, orig: orig });
+    });
+    return { done: out };
   });
 }
 
@@ -388,7 +429,7 @@ function caiDat() {
  * core.js — Lõi trộn đề / chấm điểm (dùng chung cho trình duyệt và
  * máy chủ Google Apps Script). Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí
  * ===================================================================== */
-var QC_VERSION = '2.2';
+var QC_VERSION = '2.3';
 
 function QC_hash(str) {
   var h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0;

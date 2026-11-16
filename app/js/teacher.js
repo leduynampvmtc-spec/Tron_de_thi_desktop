@@ -507,6 +507,41 @@
     });
     return out.sort((a, b) => sortVN(a.row, b.row));
   }
+  /* ---- Nộp bài khi chưa đến nửa thời gian làm bài ---- */
+  const limCache = new Map();
+  function limOf(r) {
+    if (!curExam) return 0;
+    const st = curExam.settings || {};
+    if (st.navMode === 'free') { if (st.freeTime !== 'total') return 0; if (+st.totalMin > 0) return Math.round(+st.totalMin * 60); }
+    const k = cur + '|' + r['Mã lượt'];
+    if (!limCache.has(k)) { let lim = 0; try { lim = QuizCore.totalLimit(st, QuizCore.buildPaper(curExam, JSON.parse(r['Chi tiết']).seed)) || 0; } catch (e) { lim = 0; } limCache.set(k, lim); }
+    return limCache.get(k);
+  }
+  const isFast = (r) => { const lim = limOf(r), s = +r['Thời gian làm (giây)']; return lim > 0 && s >= 0 && s < lim / 2; };
+  const origScore = (r) => r['Nộp sớm'] ? +r['Điểm gốc'] || 0 : +r['Điểm'] || 0;
+  const vnNum = (v) => String(v).replace('.', ',');
+  const FAST_TXT = { 'Cho 0 điểm': '0 điểm', 'Cho nửa điểm': 'nửa điểm', 'Giữ điểm': 'giữ điểm' };
+  /** Hỏi giáo viên: 1) cho 0 điểm, 2) cho một nửa số điểm (hoặc giữ nguyên) */
+  function askFast(rows) {
+    if (!rows.length) return;
+    const st = (curExam && curExam.settings) || {};
+    const half = (v) => QuizCore.round(v / 2, st.round || 0.1);
+    modal('<h2 style="margin:0">Nộp bài khi chưa đến nửa thời gian</h2>' +
+      '<p class="muted" style="margin:6px 0 10px">' + (rows.length > 1 ? rows.length + ' em dưới đây' : 'Em dưới đây') + ' nộp bài khi chưa làm đến một nửa thời gian của bài. Thầy/cô cho bao nhiêu điểm?</p>' +
+      '<div class="scroll" style="max-height:300px"><table class="tbl"><tr><th>Họ và tên</th><th>Lớp</th><th>Thời gian làm</th><th>Thời gian của bài</th><th class="num">Điểm bài làm</th><th class="num">Một nửa</th><th>Đang xử lý</th></tr>' +
+      rows.map(r => '<tr><td><b>' + esc(r['Họ và tên']) + '</b></td><td>' + esc(r['Lớp']) + '</td><td>' + fmtDur(r['Thời gian làm (giây)']) + '</td><td>' + fmtDur(limOf(r)) + '</td><td class="num"><b>' + vnNum(origScore(r)) + '</b></td><td class="num">' + vnNum(half(origScore(r))) + '</td><td>' + (r['Nộp sớm'] ? esc(r['Nộp sớm']) : '<span class="pill warn">Chưa chọn</span>') + '</td></tr>').join('') + '</table></div>' +
+      '<div class="row" style="margin-top:14px"><button class="btn danger" data-fm="zero">1 · Cho 0 điểm</button><button class="btn yel" data-fm="half">2 · Cho một nửa số điểm</button><button class="btn" data-fm="keep">Giữ nguyên điểm bài làm</button><span class="spacer"></span><button class="btn" id="mClose">Đóng</button></div>' +
+      '<p class="hint">Điểm bài làm vẫn được giữ lại (cột Ghi chú); thầy/cô đổi lại cách cho điểm lúc nào cũng được.</p>');
+    $('#mClose').onclick = closeModal;
+    $$('#modalBody [data-fm]').forEach(b => b.onclick = async () => {
+      $$('#modalBody [data-fm]').forEach(x => x.disabled = true);
+      try {
+        await api(conf().api, { action: 'fastScore', key: conf().key, attemptIds: rows.map(r => r['Mã lượt']), mode: b.dataset.fm });
+        toast({ zero: 'Đã cho 0 điểm', half: 'Đã cho một nửa số điểm', keep: 'Đã giữ nguyên điểm bài làm' }[b.dataset.fm] + (rows.length > 1 ? ' (' + rows.length + ' em)' : ''), 'ok');
+        closeModal(); refreshResults();
+      } catch (e) { $$('#modalBody [data-fm]').forEach(x => x.disabled = false); toast(/không hợp lệ/i.test(e.message) ? 'Máy chủ đang chạy bản cũ — hãy dán Code.gs mới (bản 2.3) rồi Triển khai phiên bản mới.' : e.message, 'bad'); }
+    });
+  }
   const POLICY_TXT = { max: 'lần cao nhất', last: 'lần cuối', first: 'lần đầu', avg: 'trung bình các lần' };
   function renderResults() {
     const res = (curData.results || []).slice().sort((a, b) => sortVN(a, b) || (+a['Nộp bài'] || 0) - (+b['Nộp bài'] || 0));
@@ -542,6 +577,15 @@
     });
     if (lowList.length) $('#progressBox').innerHTML += '<div class="msg relow" style="margin-top:12px"><b>⚠ ' + lowList.length + ' em dưới ' + String(rePt).replace('.', ',') + ' điểm:</b> ' + lowList.map(x => esc(x.name) + ' (' + String(x.score).replace('.', ',') + ')').join(', ') +
       '<div class="row" style="margin-top:8px"><button class="btn sm yel" id="reAll">Cho cả ' + lowList.length + ' em làm thêm 1 lần</button><span class="hint">hoặc bấm nút vàng ở từng dòng để chọn riêng em nào được làm thêm.</span></div></div>';
+    const fastRows = res.filter(isFast), fastPend = fastRows.filter(r => !r['Nộp sớm']), fastIds = new Set(fastRows.map(r => r['Mã lượt']));
+    if (fastPend.length) $('#progressBox').innerHTML += '<div class="msg relow" id="fastBox" style="margin-top:12px"><b>⏱ ' + fastPend.length + ' em nộp bài khi chưa đến nửa thời gian:</b> ' + fastPend.map(r => esc(r['Họ và tên']) + ' (' + fmtDur(r['Thời gian làm (giây)']).trim() + ' / ' + fmtDur(limOf(r)).trim() + ', ' + vnNum(r['Điểm']) + ' điểm)').join(', ') +
+      '<div class="row" style="margin-top:8px"><button class="btn sm yel" id="fastAll">Chọn điểm cho ' + (fastPend.length > 1 ? 'cả ' + fastPend.length + ' em' : 'em này') + '</button><span class="hint"><b>1)</b> cho 0 điểm · <b>2)</b> cho một nửa số điểm — hoặc bấm nút <b>Nộp sớm?</b> ở từng dòng để chọn riêng từng em.</span></div></div>';
+    const fastCell = (r) => !fastIds.has(r['Mã lượt']) ? '' : r['Nộp sớm'] ? '<button class="btn sm" data-fast="' + esc(r['Mã lượt']) + '" title="Nộp khi chưa đến nửa thời gian — điểm bài làm ' + vnNum(origScore(r)) + '. Bấm để đổi cách cho điểm">⏱ ' + (FAST_TXT[r['Nộp sớm']] || esc(r['Nộp sớm'])) + '</button>' : '<button class="btn sm yel" data-fast="' + esc(r['Mã lượt']) + '" title="Em nộp bài khi chưa đến nửa thời gian — bấm để chọn: cho 0 điểm hoặc một nửa số điểm">⏱ Nộp sớm?</button>';
+    // Tên trùng nhau: đỏ = trùng tên mà đều là lần 1 (một người làm 2 lần dưới 2 lượt khác nhau); vàng = lần làm thứ 2 trở đi
+    const lanOf = (r) => +r['Lần'] || 1, nmK = (r) => QuizCore.normName(r['Họ và tên']), firstCnt = {};
+    res.forEach(r => { if (lanOf(r) === 1) firstCnt[nmK(r)] = (firstCnt[nmK(r)] || 0) + 1; });
+    const dupCls = (r) => lanOf(r) >= 2 ? ' class="dupY" title="Lần làm thứ ' + lanOf(r) + ' của em này"' : firstCnt[nmK(r)] > 1 ? ' class="dupR" title="Trùng tên với một bài khác cũng ghi là lần 1 — có thể em này đã làm 2 lần (ghi khác lớp / MSSV)"' : '';
+    if (res.some(r => dupCls(r))) $('#progressBox').innerHTML += '<div class="hint" style="margin-top:10px"><span class="dupR" style="padding:1px 8px;border-radius:5px">Tô đỏ</span> tên trùng nhau mà đều ghi lần 1 (có thể một em làm 2 lần) · <span class="dupY" style="padding:1px 8px;border-radius:5px">Tô vàng</span> lần làm thứ 2 trở đi.</div>';
     const reCell = (r) => { const x = reInfo[r['Mã lượt']]; if (!x) return ''; if (x.st === 'low') return '<button class="btn sm yel" data-re="' + esc(x.k) + '" title="Em dưới ' + rePt + ' điểm — bấm để cho em làm thêm 1 lần (giữ bài cũ)">Cho làm thêm</button>'; return '<span class="pill warn" title="Đã cho làm thêm">' + (x.st === 'doing' ? 'Đang làm lại' : 'Đã cho làm thêm') + '</span>'; };
     const grant = async (keys, who) => {
       if (!confirm('Cho ' + who + ' làm thêm 1 lần (đề trộn mới, bài cũ vẫn giữ)?')) return;
@@ -553,13 +597,15 @@
     const hasToeic = res.some(r => { const x = skOf(r); return x && x.t && x.t.LR != null; });
     const skCell = (r) => { const x = skOf(r) || {}; return skCols.map(k => { const o = x.s && x.s[k]; return '<td class="num">' + (o ? (o.pending ? '<span class="pill warn" title="Chưa chấm ' + o.pending + ' câu">' + o.score + '*</span>' : o.score) : '—') + '</td>'; }).join('') + (hasToeic ? '<td class="num">' + (x.t && x.t.LR != null ? x.t.LR : '—') + '</td>' : ''); };
     $('#resTbl').innerHTML = '<tr><th class="num">STT</th><th>Họ và tên</th><th>Lớp</th><th>MSSV</th><th class="num">Điểm</th>' + (multi ? '<th class="num">Lần</th>' : '') + skCols.map(k => '<th class="num">' + SKN[k] + '</th>').join('') + (hasToeic ? '<th class="num" title="Quy đổi TOEIC tham khảo (Nghe + Đọc)">TOEIC</th>' : '') + '<th class="num">Đúng</th>' + (hasEssay ? '<th>Tự luận / Nói</th>' : '') + '<th>Thời gian làm</th><th class="num">Vi phạm</th><th>Nộp lúc</th><th>Ghi chú</th><th></th></tr>' +
-      (res.length ? res.map((r, i) => '<tr' + (multi && !chosenIds.has(r['Mã lượt']) ? ' class="muted"' : '') + '><td class="num">' + (i + 1) + '</td><td><b>' + esc(r['Họ và tên']) + '</b></td><td>' + esc(r['Lớp']) + '</td><td>' + esc(r['MSSV']) + '</td>' +
-        '<td class="num"><b>' + esc(r['Điểm']) + '</b>' + (multi && chosenIds.has(r['Mã lượt']) ? ' <span class="pill ok" title="Điểm được ghi nhận">' + (exSt.scorePolicy === 'avg' ? 'TB ' + agg.find(a => a.row === r).score : '✓') + '</span>' : '') + '</td>' + (multi ? '<td class="num">' + esc(r['Lần'] || '') + '</td>' : '') + skCell(r) + '<td class="num">' + esc(r['Số câu đúng']) + '/' + esc(r['Số câu TN']) + '</td>' +
+      (res.length ? res.map((r, i) => '<tr' + (multi && !chosenIds.has(r['Mã lượt']) ? ' class="muted"' : '') + '><td class="num">' + (i + 1) + '</td><td' + dupCls(r) + '><b>' + esc(r['Họ và tên']) + '</b></td><td>' + esc(r['Lớp']) + '</td><td>' + esc(r['MSSV']) + '</td>' +
+        '<td class="num"><b>' + esc(r['Điểm']) + '</b>' + (r['Nộp sớm'] && r['Nộp sớm'] !== 'Giữ điểm' ? ' <span class="hint" title="Điểm bài làm trước khi xử lý nộp sớm">(bài làm ' + vnNum(origScore(r)) + ')</span>' : '') + (multi && chosenIds.has(r['Mã lượt']) ? ' <span class="pill ok" title="Điểm được ghi nhận">' + (exSt.scorePolicy === 'avg' ? 'TB ' + agg.find(a => a.row === r).score : '✓') + '</span>' : '') + '</td>' + (multi ? '<td class="num">' + esc(r['Lần'] || '') + '</td>' : '') + skCell(r) + '<td class="num">' + esc(r['Số câu đúng']) + '/' + esc(r['Số câu TN']) + '</td>' +
         (hasEssay ? '<td>' + (r['Tự luận'] ? '<span class="pill ' + (/Chưa/.test(r['Tự luận']) ? 'warn' : 'ok') + '">' + esc(r['Tự luận']) + '</span>' : '') + '</td>' : '') +
         '<td>' + fmtDur(r['Thời gian làm (giây)']) + '</td><td class="num">' + (+r['Vi phạm'] ? '<span class="pill bad">' + r['Vi phạm'] + '</span>' : '0') + '</td><td>' + fmtTime(r['Nộp bài']) + '</td><td>' + esc(r['Ghi chú']) + '</td>' +
-        '<td class="row" style="flex-wrap:nowrap">' + reCell(r) + '<button class="btn sm" data-see=""' + esc(r['Mã lượt']) + '">' + (r['Tự luận'] ? 'Chấm / xem' : 'Xem bài') + '</button><button class="btn sm danger" data-redo="' + esc(r['Mã lượt']) + '" title="Xóa hẳn bài này để học sinh làm lại từ đầu">Xóa bài</button></td></tr>').join('')
+        '<td class="row" style="flex-wrap:nowrap">' + fastCell(r) + reCell(r) + '<button class="btn sm" data-see="' + esc(r['Mã lượt']) + '">' + (r['Tự luận'] ? 'Chấm / xem' : 'Xem bài') + '</button><button class="btn sm danger" data-redo="' + esc(r['Mã lượt']) + '" title="Xóa hẳn bài này để học sinh làm lại từ đầu">Xóa bài</button></td></tr>').join('')
         : '<tr><td colspan="12" class="muted">Chưa có bài nộp.</td></tr>');
     $$('[data-see]').forEach(b => b.onclick = () => seeAttempt(b.dataset.see));
+    $$('[data-fast]').forEach(b => b.onclick = () => askFast(res.filter(r => r['Mã lượt'] === b.dataset.fast)));
+    if ($('#fastAll')) $('#fastAll').onclick = () => askFast(fastPend);
     $$('[data-re]').forEach(b => b.onclick = () => { const x = lowList.find(y => y.k === b.dataset.re); grant([b.dataset.re], 'em ' + (x ? x.name : '')); });
     if ($('#reAll')) $('#reAll').onclick = () => grant(lowList.map(x => x.k), 'cả ' + lowList.length + ' em dưới ' + rePt + ' điểm');
     $$('[data-redo]').forEach(b => b.onclick = async () => {
@@ -635,6 +681,8 @@
     if (!curData) return;
     const res = (curData.results || []).slice().sort(sortVN);
     const ex = curExam || {}; const info = ex.info || {}; const st = ex.settings || {};
+    // STT là công thức => tự đánh lại khi giáo viên xóa bớt hàng; KT = khóa tên (cột ẩn) để tô màu tên trùng
+    const STT = (i) => ({ f: 'ROW()-ROW($A$1)', v: i + 1, s: 4 }), KT = (r) => ({ v: QuizCore.normName(r['Họ và tên']), s: 2 });
     const H = (v) => ({ v, s: 1 }), C = (v) => ({ v, s: 2 }), N1 = (v) => ({ v: v === '' || v == null ? '' : +v, s: 3 }), N = (v) => ({ v: v === '' || v == null ? '' : +v, s: 4 });
     const agg = aggregate(res);
     const rows1 = [[H('STT'), H('Họ và tên'), H('Lớp'), H('MSSV'), H('Điểm'), H('Số câu đúng'), H('Số câu TN'), H('Điểm TL đạt'), H('Tự luận'), H('Thời gian làm'), H('Vi phạm'), H('Nộp bài'), H('Ghi chú'), H('Mã đề'), H('Số lần làm')]];
@@ -643,15 +691,22 @@
     const xToeic = res.some(r => { const x = skOfX(r); return x.t && x.t.LR != null; });
     xCols.forEach(k => rows1[0].push(H(SKN[k] + ' (thang 10)')));
     if (xToeic) ['TOEIC Nghe', 'TOEIC Đọc', 'TOEIC Nghe+Đọc'].forEach(h => rows1[0].push(H(h)));
-    agg.forEach((a, i) => { const r = a.row, x = skOfX(r); rows1.push([N(i + 1), C(r['Họ và tên']), C(r['Lớp']), C(r['MSSV']), N1(a.score), N(r['Số câu đúng']), N(r['Số câu TN']), N1(r['Điểm TL đạt']), C(r['Tự luận']), C(fmtDur(r['Thời gian làm (giây)'])), N(r['Vi phạm']), C(fmtTime(r['Nộp bài'])), C(r['Ghi chú']), C(r['Mã đề']), N(a.count)].concat(xCols.map(k => N1(x.s && x.s[k] ? x.s[k].score : ''))).concat(xToeic ? [N(x.t ? x.t.L : ''), N(x.t ? x.t.R : ''), N(x.t ? x.t.LR : '')] : [])); });
-    const rowsAll = [[H('STT'), H('Họ và tên'), H('Lớp'), H('MSSV'), H('Lần'), H('Điểm'), H('Số câu đúng'), H('Số câu TN'), H('Thời gian làm'), H('Vi phạm'), H('Nộp bài'), H('Ghi chú')]];
-    res.slice().sort((a, b) => sortVN(a, b) || (+a['Nộp bài'] || 0) - (+b['Nộp bài'] || 0)).forEach((r, i) => rowsAll.push([N(i + 1), C(r['Họ và tên']), C(r['Lớp']), C(r['MSSV']), N(r['Lần'] || 1), N1(r['Điểm']), N(r['Số câu đúng']), N(r['Số câu TN']), C(fmtDur(r['Thời gian làm (giây)'])), N(r['Vi phạm']), C(fmtTime(r['Nộp bài'])), C(r['Ghi chú'])]));
+    agg.forEach((a, i) => { const r = a.row, x = skOfX(r); rows1.push([STT(i), C(r['Họ và tên']), C(r['Lớp']), C(r['MSSV']), N1(a.score), N(r['Số câu đúng']), N(r['Số câu TN']), N1(r['Điểm TL đạt']), C(r['Tự luận']), C(fmtDur(r['Thời gian làm (giây)'])), N(r['Vi phạm']), C(fmtTime(r['Nộp bài'])), C(r['Ghi chú']), C(r['Mã đề']), N(a.count)].concat(xCols.map(k => N1(x.s && x.s[k] ? x.s[k].score : ''))).concat(xToeic ? [N(x.t ? x.t.L : ''), N(x.t ? x.t.R : ''), N(x.t ? x.t.LR : '')] : []).concat([KT(r)])); });
+    rows1[0].push(H('Khóa tên'));
+    const kc1 = QA.colName(rows1[0].length - 1), n1 = Math.max(2, rows1.length), last1 = QA.colName(rows1[0].length - 2);
+    const cf1 = [{ ref: 'A2:' + last1 + n1, dxf: 0, formula: 'AND($O2=1,COUNTIF($' + kc1 + '$2:$' + kc1 + '$' + n1 + ',$' + kc1 + '2)>1)' }, { ref: 'A2:' + last1 + n1, dxf: 1, formula: 'AND(ISNUMBER($O2),$O2>=2)' }];
+    const rowsAll = [[H('STT'), H('Họ và tên'), H('Lớp'), H('MSSV'), H('Lần'), H('Điểm'), H('Số câu đúng'), H('Số câu TN'), H('Thời gian làm'), H('Vi phạm'), H('Nộp bài'), H('Ghi chú'), H('Khóa tên')]];
+    res.slice().sort((a, b) => sortVN(a, b) || (+a['Nộp bài'] || 0) - (+b['Nộp bài'] || 0)).forEach((r, i) => rowsAll.push([STT(i), C(r['Họ và tên']), C(r['Lớp']), C(r['MSSV']), N(r['Lần'] || 1), N1(r['Điểm']), N(r['Số câu đúng']), N(r['Số câu TN']), C(fmtDur(r['Thời gian làm (giây)'])), N(r['Vi phạm']), C(fmtTime(r['Nộp bài'])), C(r['Ghi chú']), KT(r)]));
+    const nA = Math.max(2, rowsAll.length);
+    const cfA = [{ ref: 'A2:L' + nA, dxf: 0, formula: 'AND($E2=1,COUNTIFS($M$2:$M$' + nA + ',$M2,$E$2:$E$' + nA + ',1)>1)' }, { ref: 'A2:L' + nA, dxf: 1, formula: 'AND(ISNUMBER($E2),$E2>=2)' }];
     const rows2 = [[{ v: 'THÔNG TIN BÀI KIỂM TRA / BÀI THI', s: 5 }], [],
       ['Tiêu đề', ex.title || ''], ['Loại bài', info.loai || ''], [(info.hinhThuc || 'Môn học/Mô đun'), info.mon || ''], ['Nội dung', info.noiDung || ''],
       ['Lớp', info.lop || ''], ['Khóa', info.khoa || ''], ['Lần thi', info.lan || ''], ['Ngày', info.ngay || ''], ['Giáo viên', info.gv || ''], ['Mã đề', cur],
       ['Thang điểm', st.scale || 10], ['Số học sinh đã nộp', agg.length], ['Tổng số lượt nộp', res.length],
       ['Số lần được làm', QuizCore.maxAttempts(st) ? QuizCore.maxAttempts(st) : 'Không giới hạn (luyện tập)'], ['Điểm ghi nhận', POLICY_TXT[st.scorePolicy || 'max']],
-      ['Bắt đầu vào làm', st.openFromTs ? fmtTime(st.openFromTs) : ''], ['Hết giờ vào làm', st.openToTs ? fmtTime(st.openToTs) : ''], ['Kết thúc bài', st.endAtTs ? fmtTime(st.endAtTs) : ''], ['Xuất lúc', fmtTime(Date.now())], [],
+      ['Bắt đầu vào làm', st.openFromTs ? fmtTime(st.openFromTs) : ''], ['Hết giờ vào làm', st.openToTs ? fmtTime(st.openToTs) : ''], ['Kết thúc bài', st.endAtTs ? fmtTime(st.endAtTs) : ''], ['Xuất lúc', fmtTime(Date.now())],
+      ['Tô đỏ', 'Tên trùng nhau mà số lần làm là 1 — có thể một người đã làm 2 lần (ghi khác lớp / MSSV). Xóa bớt hàng trùng thì hết đỏ.'],
+      ['Tô vàng', 'Số lần làm từ 2 trở lên.'], ['Cột STT', 'Tự đánh lại số thứ tự khi xóa bớt hàng.'], [],
       [{ v: 'Phần mềm được tạo bởi Lê Duy Nam — Giảng viên Trường Cao đẳng Dầu khí', s: 6 }]];
     const rows3 = [[H('Họ và tên'), H('Lớp'), H('Lần'), H('Câu'), H('Loại'), H('Nội dung câu hỏi'), H('HS chọn / trả lời'), H('Đáp án'), H('Kết quả')]];
     const strip = (h) => String(h || '').replace(/<img[^>]*>/g, '[CT]').replace(/<br\s*\/?>/g, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
@@ -667,8 +722,8 @@
       });
     });
     const blob = buildXlsx([
-      { name: 'KetQua', rows: rows1, cols: [6, 28, 14, 14, 8, 11, 10, 10, 16, 16, 9, 17, 26, 10, 10], freeze: 1 },
-      { name: 'TatCaLanLam', rows: rowsAll, cols: [6, 28, 14, 14, 6, 8, 11, 10, 16, 9, 17, 26], freeze: 1 },
+      { name: 'KetQua', rows: rows1, cols: [6, 28, 14, 14, 8, 11, 10, 10, 16, 16, 9, 17, 26, 10, 10].concat(rows1[0].slice(15, -1).map(() => 12)).concat([{ w: 20, hidden: true }]), freeze: 1, cf: cf1 },
+      { name: 'TatCaLanLam', rows: rowsAll, cols: [6, 28, 14, 14, 6, 8, 11, 10, 16, 9, 17, 26, { w: 20, hidden: true }], freeze: 1, cf: cfA },
       { name: 'ThongTin', rows: rows2, cols: [22, 70] },
       { name: 'ChiTiet', rows: rows3, cols: [26, 12, 6, 6, 6, 60, 20, 12, 9], freeze: 1 }
     ]);

@@ -224,3 +224,7 @@ img.drvimg { max-width: 100%; height: auto; display: block; margin: 6px auto; bo
 .btn.yel { background: #f5b301; border-color: #e0a200; color: #3a2a00; font-weight: 600; }
 .btn.yel:hover { background: #ffc21a; }
 .msg.relow { background: #fff6d6; border: 1px solid #f0c94a; color: #5a4300; }
+
+/* v2.3: tên trùng nhau ở bảng kết quả */
+.tbl td.dupR, .dupR { background: #ff8a8a; color: #4a0000; }
+.tbl td.dupY, .dupY { background: #fff066; color: #3a2a00; }
