@@ -6,7 +6,7 @@
  *   (2) Bảng 2 cột: "1." | câu hỏi ; "A)" | phương án ; "Đáp án" | A
  * Câu không có phương án A/B/C… được hiểu là câu TỰ LUẬN
  * (dòng "Đáp án:" / "Hướng dẫn chấm:" phía sau là đáp án gợi ý).
- * Công thức MathType/Equation (ảnh WMF) được vẽ lại thành SVG.
+ * Công thức MathType/Equation (ảnh WMF) và ảnh EMF được vẽ lại thành SVG.
  * Phần mềm: Lê Duy Nam — Giảng viên Trường Cao đẳng Dầu khí
  * ===================================================================== */
 (function (root) {
@@ -220,6 +220,343 @@
   }
   function svgDataUri(svg) { return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg))); }
 
+  /* ----------------------------- EMF → SVG -----------------------------
+   * v2.4 — ảnh .emf (công thức, hình vẽ dán từ Visio / Excel / AutoCAD…) vẽ lại thành SVG.
+   * Đọc các bản ghi GDI thường gặp: đường, đa giác, Bézier, path, hình chữ nhật, elip, chữ,
+   * bút / chổi / phông, hệ tọa độ (map mode, window / viewport, world transform) và ảnh điểm (DIB). */
+  function emfToSvg(u8) {
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    if (u8.length < 88 || dv.getUint32(0, true) !== 1 || dv.getUint32(40, true) !== 0x464D4520) throw new Error('Không phải file EMF');
+    const i32 = (o) => dv.getInt32(o, true), u32 = (o) => dv.getUint32(o, true), i16 = (o) => dv.getInt16(o, true), f32 = (o) => dv.getFloat32(o, true);
+    const col = (o) => 'rgb(' + dv.getUint8(o) + ',' + dv.getUint8(o + 1) + ',' + dv.getUint8(o + 2) + ')';
+    const bounds = { l: i32(8), t: i32(12), r: i32(16), b: i32(20) }, frame = { l: i32(24), t: i32(28), r: i32(32), b: i32(36) };
+    const devPx = { x: i32(72), y: i32(76) }, devMm = { x: i32(80), y: i32(84) };
+    const pxPerMm = { x: devMm.x > 0 && devPx.x > 0 ? devPx.x / devMm.x : 96 / 25.4, y: devMm.y > 0 && devPx.y > 0 ? devPx.y / devMm.y : 96 / 25.4 };
+    const STOCK = { 0: { k: 'brush', style: 0, color: 'rgb(255,255,255)' }, 1: { k: 'brush', style: 0, color: 'rgb(192,192,192)' }, 2: { k: 'brush', style: 0, color: 'rgb(128,128,128)' }, 3: { k: 'brush', style: 0, color: 'rgb(64,64,64)' },
+      4: { k: 'brush', style: 0, color: 'rgb(0,0,0)' }, 5: { k: 'brush', style: 1 }, 6: { k: 'pen', style: 0, w: 0, color: 'rgb(255,255,255)' }, 7: { k: 'pen', style: 0, w: 0, color: 'rgb(0,0,0)' }, 8: { k: 'pen', style: 5, w: 0 } };
+    const DEF_FONT = { k: 'font', h: -16, esc: 0, weight: 400, italic: false, under: false, face: 'Arial' };
+    const objs = {};
+    let st = { pen: STOCK[7], brush: STOCK[0], font: DEF_FONT, text: 'rgb(0,0,0)', align: 0, fill: 'evenodd', mode: 1,
+      wo: [0, 0], we: [1, 1], vo: [0, 0], ve: [1, 1], xf: [1, 0, 0, 1, 0, 0], cx: 0, cy: 0 };
+    const stack = [];
+    const out = [], bmps = [];
+    let path = null, lastPath = '';
+    // ma trận tổng: tọa độ logic → tọa độ thiết bị
+    let M = null;
+    const mat = () => {
+      if (M) return M;
+      const [a, b, c, d, e, f] = st.xf;
+      let sx = 1, sy = 1, ox = -st.wo[0], oy = -st.wo[1], tx = st.vo[0], ty = st.vo[1];
+      const fixed = { 2: 0.1, 3: 0.01, 4: 0.254, 5: 0.0254, 6: 25.4 / 1440 }[st.mode];
+      if (fixed) { sx = fixed * pxPerMm.x; sy = -fixed * pxPerMm.y; }
+      else if (st.mode === 7 || st.mode === 8) {
+        sx = st.we[0] ? st.ve[0] / st.we[0] : 1; sy = st.we[1] ? st.ve[1] / st.we[1] : 1;
+        if (st.mode === 7) { const m = Math.min(Math.abs(sx), Math.abs(sy)); sx = Math.sign(sx || 1) * m; sy = Math.sign(sy || 1) * m; }
+      }
+      // device = ((world(p) - wo) * s + vo)
+      M = [a * sx, b * sy, c * sx, d * sy, (e + ox) * sx + tx, (f + oy) * sy + ty];
+      return M;
+    };
+    const P = (x, y) => { const m = mat(); return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]]; };
+    const fmt = (v) => Math.round(v * 100) / 100;
+    const pt = (x, y) => { const p = P(x, y); return fmt(p[0]) + ' ' + fmt(p[1]); };
+    const scaleX = () => { const m = mat(); return Math.hypot(m[0], m[1]) || 1; };
+    const scaleY = () => { const m = mat(); return Math.hypot(m[2], m[3]) || 1; };
+    const penW = () => (st.pen.w > 0 ? st.pen.w * (scaleX() + scaleY()) / 2 : 0);
+    const styleOf = (fill, stroke) => {
+      let s = '';
+      const br = st.brush, pe = st.pen;
+      if (fill && br && br.style !== 1) s += ' fill="' + br.color + '"' + (br.style === 2 ? ' fill-opacity="0.35"' : '') + ' fill-rule="' + st.fill + '"';
+      else s += ' fill="none"';
+      if (stroke && pe && pe.style !== 5) {
+        const w = penW();
+        s += ' stroke="' + pe.color + '" stroke-width="' + (w > 0 ? fmt(w) : '__HAIR__') + '"';
+        const cap = pe.cap === 0x100 ? 'square' : pe.cap === 0x200 ? 'butt' : 'round', join = pe.join === 0x1000 ? 'bevel' : pe.join === 0x2000 ? 'miter' : 'round';
+        s += ' stroke-linecap="' + cap + '" stroke-linejoin="' + join + '"';
+        const u = Math.max(w, 1);
+        const dash = { 1: [6, 2], 2: [1, 2], 3: [6, 2, 1, 2], 4: [6, 2, 1, 2, 1, 2] }[pe.style];
+        if (dash) s += ' stroke-dasharray="' + dash.map(x => fmt(x * u)).join(' ') + '"';
+      }
+      return s;
+    };
+    const draw = (d, fill, stroke) => { if (d) out.push('<path d="' + d + '"' + styleOf(fill, stroke) + '/>'); };
+    // đọc danh sách điểm
+    const pts = (off, n, small) => { const a = []; for (let k = 0; k < n; k++) a.push(small ? [i16(off + 4 * k), i16(off + 4 * k + 2)] : [i32(off + 8 * k), i32(off + 8 * k + 4)]); return a; };
+    const polyD = (a, close) => a.length ? 'M' + a.map(p => pt(p[0], p[1])).join('L') + (close ? 'Z' : '') : '';
+    const bezD = (a, startWithMove) => {
+      let d = '', k = 0;
+      if (startWithMove) { d = 'M' + pt(a[0][0], a[0][1]); k = 1; }
+      for (; k + 2 < a.length; k += 3) d += 'C' + pt(a[k][0], a[k][1]) + ' ' + pt(a[k + 1][0], a[k + 1][1]) + ' ' + pt(a[k + 2][0], a[k + 2][1]);
+      return d;
+    };
+    const rectD = (l, t, r, b) => 'M' + pt(l, t) + 'L' + pt(r, t) + 'L' + pt(r, b) + 'L' + pt(l, b) + 'Z';
+    const rrectD = (l, t, r, b, ew, eh) => {
+      if (r < l) [l, r] = [r, l]; if (b < t) [t, b] = [b, t];
+      const rx = Math.min(Math.abs(ew) / 2, (r - l) / 2), ry = Math.min(Math.abs(eh) / 2, (b - t) / 2), k = 0.4477;
+      if (!rx || !ry) return rectD(l, t, r, b);
+      return 'M' + pt(l + rx, t) + 'L' + pt(r - rx, t) + 'C' + pt(r - rx * k, t) + ' ' + pt(r, t + ry * k) + ' ' + pt(r, t + ry) +
+        'L' + pt(r, b - ry) + 'C' + pt(r, b - ry * k) + ' ' + pt(r - rx * k, b) + ' ' + pt(r - rx, b) +
+        'L' + pt(l + rx, b) + 'C' + pt(l + rx * k, b) + ' ' + pt(l, b - ry * k) + ' ' + pt(l, b - ry) +
+        'L' + pt(l, t + ry) + 'C' + pt(l, t + ry * k) + ' ' + pt(l + rx * k, t) + ' ' + pt(l + rx, t) + 'Z';
+    };
+    const ellD = (l, t, r, b) => {
+      const cx = (l + r) / 2, cy = (t + b) / 2, rx = (r - l) / 2, ry = (b - t) / 2, k = 0.5523;
+      return 'M' + pt(cx + rx, cy) + 'C' + pt(cx + rx, cy + k * ry) + ' ' + pt(cx + k * rx, cy + ry) + ' ' + pt(cx, cy + ry) +
+        'C' + pt(cx - k * rx, cy + ry) + ' ' + pt(cx - rx, cy + k * ry) + ' ' + pt(cx - rx, cy) +
+        'C' + pt(cx - rx, cy - k * ry) + ' ' + pt(cx - k * rx, cy - ry) + ' ' + pt(cx, cy - ry) +
+        'C' + pt(cx + k * rx, cy - ry) + ' ' + pt(cx + rx, cy - k * ry) + ' ' + pt(cx + rx, cy) + 'Z';
+    };
+    const emit = (d, fill, stroke) => { if (path !== null) path += d; else draw(d, fill, stroke); };
+    const bmp = (rec, offBmi, cbBmi, offBits, cbBits, usage, x, y, w, h, sx, sy, sw, sh, rop) => {
+      if (!cbBmi || offBmi + cbBmi > rec.size || offBits + cbBits > rec.size) return false;
+      const p1 = P(x, y), p2 = P(x + w, y + h);
+      const id = bmps.length;
+      bmps.push({ bmi: u8.subarray(rec.pos + offBmi, rec.pos + offBmi + cbBmi), bits: u8.subarray(rec.pos + offBits, rec.pos + offBits + cbBits), usage, src: [sx, sy, sw, sh], rop: rop >>> 0, dest: [x, y, w, h].join(',') });
+      const X = Math.min(p1[0], p2[0]), Y = Math.min(p1[1], p2[1]), W = Math.abs(p2[0] - p1[0]), H = Math.abs(p2[1] - p1[1]);
+      const flip = (p2[0] < p1[0] ? -1 : 1), flipY = (p2[1] < p1[1] ? -1 : 1);
+      const tr = flip < 0 || flipY < 0 ? ' transform="translate(' + fmt(flip < 0 ? 2 * X + W : 0) + ' ' + fmt(flipY < 0 ? 2 * Y + H : 0) + ') scale(' + flip + ' ' + flipY + ')"' : '';
+      out.push('<image x="' + fmt(X) + '" y="' + fmt(Y) + '" width="' + fmt(W) + '" height="' + fmt(H) + '" preserveAspectRatio="none" href="__BMP' + id + '__"' + tr + '/>');
+      return true;
+    };
+    let pos = 0, guard = 0, drew = 0, plusOnly = false;
+    while (pos + 8 <= u8.length && guard++ < 200000) {
+      const type = u32(pos), size = u32(pos + 4);
+      if (size < 8 || pos + size > u8.length) break;
+      const b = pos, rec = { pos, size };
+      switch (type) {
+        case 14: pos = u8.length; continue; // EOF
+        case 9: st.we = [i32(b + 8), i32(b + 12)]; M = null; break;
+        case 10: st.wo = [i32(b + 8), i32(b + 12)]; M = null; break;
+        case 11: st.ve = [i32(b + 8), i32(b + 12)]; M = null; break;
+        case 12: st.vo = [i32(b + 8), i32(b + 12)]; M = null; break;
+        case 17: st.mode = u32(b + 8); M = null; break;
+        case 19: st.fill = u32(b + 8) === 2 ? 'nonzero' : 'evenodd'; break;
+        case 22: st.align = u32(b + 8); break;
+        case 24: st.text = col(b + 8); break;
+        case 33: stack.push(Object.assign({}, st, { xf: st.xf.slice(), wo: st.wo.slice(), we: st.we.slice(), vo: st.vo.slice(), ve: st.ve.slice() })); break;
+        case 34: { let n = i32(b + 8); n = n < 0 ? -n : stack.length - n; let s2 = null; while (n-- > 0 && stack.length) s2 = stack.pop(); if (s2) { const cx = st.cx, cy = st.cy; st = s2; st.cx = cx; st.cy = cy; } M = null; break; }
+        case 35: st.xf = [f32(b + 8), f32(b + 12), f32(b + 16), f32(b + 20), f32(b + 24), f32(b + 28)]; M = null; break;
+        case 36: {
+          const x = [f32(b + 8), f32(b + 12), f32(b + 16), f32(b + 20), f32(b + 24), f32(b + 28)], mode = u32(b + 32), o = st.xf;
+          const mul = (p, q) => [p[0] * q[0] + p[1] * q[2], p[0] * q[1] + p[1] * q[3], p[2] * q[0] + p[3] * q[2], p[2] * q[1] + p[3] * q[3], p[4] * q[0] + p[5] * q[2] + q[4], p[4] * q[1] + p[5] * q[3] + q[5]];
+          st.xf = mode === 1 ? [1, 0, 0, 1, 0, 0] : mode === 2 ? mul(x, o) : mode === 3 ? mul(o, x) : mode === 4 ? x : o;
+          M = null; break;
+        }
+        case 37: { const ih = u32(b + 8); const o = ih & 0x80000000 ? STOCK[ih & 0x7FFFFFFF] || (ih & 0x7FFFFFFF) >= 10 && DEF_FONT : objs[ih]; if (o) { if (o.k === 'pen') st.pen = o; else if (o.k === 'brush') st.brush = o; else if (o.k === 'font') st.font = o; } break; }
+        case 38: { const sty = u32(b + 12); objs[u32(b + 8)] = { k: 'pen', style: sty & 0xF, cap: sty & 0xF00, join: sty & 0xF000, w: i32(b + 16), color: col(b + 24) }; break; }
+        case 95: { const sty = u32(b + 28); objs[u32(b + 8)] = { k: 'pen', style: sty & 0xF, cap: sty & 0xF00, join: sty & 0xF000, w: (sty & 0xF0000) ? u32(b + 32) : 0, color: col(b + 40), bs: u32(b + 36) }; if (objs[u32(b + 8)].bs === 1) objs[u32(b + 8)].style = 5; break; }
+        case 39: objs[u32(b + 8)] = { k: 'brush', style: u32(b + 12), color: col(b + 16) }; break;
+        case 93: case 94: objs[u32(b + 8)] = { k: 'brush', style: 0, color: 'rgb(160,160,160)' }; break; // chổi mẫu (pattern) → xám
+        case 82: {
+          let face = ''; for (let k = 0; k < 32; k++) { const c = dv.getUint16(b + 40 + 2 * k, true); if (!c) break; face += String.fromCharCode(c); }
+          objs[u32(b + 8)] = { k: 'font', h: i32(b + 12), esc: i32(b + 20), weight: i32(b + 28), italic: !!dv.getUint8(b + 32), under: !!dv.getUint8(b + 33), face: face || 'Arial' };
+          break;
+        }
+        case 40: delete objs[u32(b + 8)]; break;
+        case 27: st.cx = i32(b + 8); st.cy = i32(b + 12); if (path !== null) path += 'M' + pt(st.cx, st.cy); break;
+        case 54: { const x = i32(b + 8), y = i32(b + 12); if (path !== null) path += 'L' + pt(x, y); else { draw('M' + pt(st.cx, st.cy) + 'L' + pt(x, y), false, true); drew++; } st.cx = x; st.cy = y; break; }
+        case 3: case 4: case 86: case 87: { // POLYGON, POLYLINE (32 / 16 bit)
+          const small = type > 80, a = pts(b + 28, u32(b + 24), small), close = type === 3 || type === 86;
+          if (path !== null) path += polyD(a, close); else { draw(polyD(a, close), close, true); drew++; }
+          break;
+        }
+        case 6: case 89: { // POLYLINETO
+          const a = pts(b + 28, u32(b + 24), type === 89);
+          const d = a.map(p => 'L' + pt(p[0], p[1])).join('');
+          if (path !== null) path += d; else { draw('M' + pt(st.cx, st.cy) + d, false, true); drew++; }
+          if (a.length) { st.cx = a[a.length - 1][0]; st.cy = a[a.length - 1][1]; }
+          break;
+        }
+        case 2: case 85: { const a = pts(b + 28, u32(b + 24), type === 85); if (path !== null) path += bezD(a, true); else { draw(bezD(a, true), false, true); drew++; } break; }
+        case 5: case 88: { // POLYBEZIERTO
+          const a = pts(b + 28, u32(b + 24), type === 88), d = bezD(a, false);
+          if (path !== null) path += d; else { draw('M' + pt(st.cx, st.cy) + d, false, true); drew++; }
+          if (a.length) { st.cx = a[a.length - 1][0]; st.cy = a[a.length - 1][1]; }
+          break;
+        }
+        case 7: case 8: case 90: case 91: { // POLYPOLYLINE / POLYPOLYGON
+          const small = type > 80, n = u32(b + 24), close = type === 8 || type === 91;
+          let off = b + 32 + 4 * n, d = '';
+          for (let k = 0; k < n; k++) { const c = u32(b + 32 + 4 * k); const a = pts(off, c, small); d += polyD(a, close); off += c * (small ? 4 : 8); }
+          if (path !== null) path += d; else { draw(d, close, true); drew++; }
+          break;
+        }
+        case 43: emit(rectD(i32(b + 8), i32(b + 12), i32(b + 16), i32(b + 20)), true, true); drew++; break;
+        case 44: emit(rrectD(i32(b + 8), i32(b + 12), i32(b + 16), i32(b + 20), i32(b + 24), i32(b + 28)), true, true); drew++; break;
+        case 42: emit(ellD(i32(b + 8), i32(b + 12), i32(b + 16), i32(b + 20)), true, true); drew++; break;
+        case 59: path = ''; break;
+        case 60: lastPath = path || ''; path = null; break;
+        case 61: if (path !== null) path += 'Z'; break;
+        case 62: draw(lastPath, true, false); drew++; break;
+        case 63: draw(lastPath, true, true); drew++; break;
+        case 64: draw(lastPath, false, true); drew++; break;
+        case 67: lastPath = ''; break; // SELECTCLIPPATH
+        case 76: case 77: { // BITBLT / STRETCHBLT
+          const x = i32(b + 24), y = i32(b + 28), w = i32(b + 32), h = i32(b + 36);
+          const ok = size >= 100 && bmp(rec, u32(b + 84), u32(b + 88), u32(b + 92), u32(b + 96), u32(b + 80), x, y, w, h, i32(b + 44), i32(b + 48), type === 77 ? i32(b + 100) : w, type === 77 ? i32(b + 104) : h, u32(b + 40));
+          if (!ok && u32(b + 40) === 0x00F00021 && st.brush.style !== 1) { draw(rectD(x, y, x + w, y + h), true, false); }
+          drew++; break;
+        }
+        case 81: bmp(rec, u32(b + 48), u32(b + 52), u32(b + 56), u32(b + 60), u32(b + 64), i32(b + 24), i32(b + 28), i32(b + 72), i32(b + 76), i32(b + 32), i32(b + 36), i32(b + 40), i32(b + 44), u32(b + 68)); drew++; break;
+        case 80: bmp(rec, u32(b + 48), u32(b + 52), u32(b + 56), u32(b + 60), u32(b + 64), i32(b + 24), i32(b + 28), i32(b + 40), i32(b + 44), i32(b + 32), i32(b + 36), i32(b + 40), i32(b + 44), 0xCC0020); drew++; break;
+        case 83: case 84: { // EXTTEXTOUTA / EXTTEXTOUTW
+          const e = b + 36, n = u32(e + 8), offS = u32(e + 12), opts = u32(e + 16), offDx = u32(e + 36);
+          let x = i32(e), y = i32(e + 4);
+          if (!n || offS >= size) break;
+          const chars = [], symF = /symbol|mt extra|wingdings/i.test(st.font.face);
+          for (let k = 0; k < n; k++) {
+            if (type === 84) { if (offS + 2 * k + 2 > size) break; const c = dv.getUint16(b + offS + 2 * k, true); chars.push((c >= 0xF000 && c <= 0xF0FF) || (symF && c < 0x100) ? mapChar(c, st.font.face) : String.fromCharCode(c)); }
+            else { if (offS + k >= size) break; chars.push(mapChar(dv.getUint8(b + offS + k), st.font.face)); }
+          }
+          let dx = null;
+          const step = opts & 0x2000 ? 2 : 1;
+          if (offDx && offDx + 4 * n * step <= size) { dx = []; for (let k = 0; k < n; k++) dx.push(i32(b + offDx + 4 * k * step)); }
+          if (st.align & 1) { x = st.cx; y = st.cy; }
+          const f = st.font, fsLog = Math.abs(f.h) * (f.h > 0 ? 0.87 : 1) || 12;
+          const sX = scaleX(), sY = scaleY(), fs = fsLog * sY;
+          const total = dx ? dx.reduce((a, c) => a + c, 0) : n * fsLog * 0.5;
+          if (st.align & 1) st.cx = x + total;
+          const txt = chars.join('');
+          if (!txt.trim()) break;
+          const p = P(x, y), m = mat();
+          let ang = Math.atan2(m[1], m[0]) * 180 / Math.PI - (f.esc || 0) / 10;
+          const ha = st.align & 6;
+          let x0 = p[0];
+          if (ha === 6) x0 -= total * sX / 2; else if (ha === 2) x0 -= total * sX;
+          const va = st.align & 24;
+          const base = va === 24 ? 'alphabetic' : va === 8 ? 'text-after-edge' : 'text-before-edge';
+          const xs = []; let acc = x0;
+          for (let k = 0; k < chars.length; k++) { xs.push(fmt(acc)); acc += (dx ? dx[k] : fsLog * 0.5) * sX; }
+          const fam = /symbol|mt extra/i.test(f.face) ? "'Times New Roman',Times,'Cambria Math',serif" : "'" + esc(f.face) + "'," + (/math/i.test(f.face) ? "'Cambria Math','STIX Two Math'," : '') + "'Times New Roman',Times,serif";
+          ang = Math.round(ang * 100) / 100;
+          out.push('<text x="' + (dx ? xs.join(' ') : fmt(x0)) + '" y="' + fmt(p[1]) + '" font-family="' + fam + '" font-size="' + fmt(fs) + '"' +
+            (f.italic ? ' font-style="italic"' : '') + (f.weight >= 600 ? ' font-weight="bold"' : '') + (f.under ? ' text-decoration="underline"' : '') +
+            (ang ? ' transform="rotate(' + ang + ' ' + fmt(p[0]) + ' ' + fmt(p[1]) + ')"' : '') +
+            ' fill="' + st.text + '" dominant-baseline="' + base + '" xml:space="preserve">' + esc(txt) + '</text>');
+          drew++;
+          break;
+        }
+        case 70: { // GDICOMMENT: EMF+ only (không có bản ghi GDI dự phòng)
+          if (size >= 24 && u32(b + 12) === 0x2B464D45 && dv.getUint16(b + 16, true) === 0x4001) plusOnly = (dv.getUint16(b + 18, true) & 1) === 0;
+          break;
+        }
+        default: break;
+      }
+      pos += size;
+    }
+    if (!drew) throw new Error(plusOnly ? 'EMF+ chỉ có bản ghi GDI+' : 'EMF không có nét vẽ nào đọc được');
+    // khung hình: Frame (0,01 mm) → tọa độ thiết bị; dự phòng Bounds
+    let vx, vy, vw, vh;
+    if (frame.r > frame.l && frame.b > frame.t) { vx = frame.l / 100 * pxPerMm.x; vy = frame.t / 100 * pxPerMm.y; vw = (frame.r - frame.l) / 100 * pxPerMm.x; vh = (frame.b - frame.t) / 100 * pxPerMm.y; }
+    else if (bounds.r >= bounds.l && bounds.b >= bounds.t) { vx = bounds.l; vy = bounds.t; vw = bounds.r - bounds.l + 1; vh = bounds.b - bounds.t + 1; }
+    else { vx = 0; vy = 0; vw = 400; vh = 200; }
+    const mm2px = 96 / 25.4;
+    let wpx = vw / pxPerMm.x * mm2px, hpx = vh / pxPerMm.y * mm2px;
+    if (!(wpx > 0)) wpx = 200; if (!(hpx > 0)) hpx = 100;
+    const hair = fmt(Math.max(vw / wpx, 0.5));
+    const body = out.join('').replace(/__HAIR__/g, hair);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="' + wpx.toFixed(1) + '" height="' + hpx.toFixed(1) + '" viewBox="' + fmt(vx) + ' ' + fmt(vy) + ' ' + fmt(vw) + ' ' + fmt(vh) + '">' + body + '</svg>';
+    return { svg, w: wpx, h: hpx, bitmaps: bmps };
+  }
+
+  /** Ảnh điểm (DIB) trong EMF → data URI (PNG qua canvas; không có canvas thì BMP) */
+  /** Giải nén ảnh RLE8 / RLE4 → các hàng không nén (độn 4 byte, từ dưới lên) */
+  function unRle(src, w, h, bpp) {
+    const stride = ((w * bpp + 31) >> 5) << 2, out = new Uint8Array(stride * h);
+    let x = 0, y = 0, i = 0;
+    const put = (v) => { if (x < w && y < h) { if (bpp === 8) out[y * stride + x] = v; else { const o = y * stride + (x >> 1); out[o] |= (x & 1) ? v & 15 : (v & 15) << 4; } } x++; };
+    while (i + 1 < src.length && y < h) {
+      const n = src[i], c = src[i + 1]; i += 2;
+      if (n) { for (let k = 0; k < n; k++) put(bpp === 8 ? c : (k & 1 ? c & 15 : c >> 4)); continue; }
+      if (c === 0) { x = 0; y++; } else if (c === 1) break;
+      else if (c === 2) { x += src[i]; y += src[i + 1]; i += 2; }
+      else { for (let k = 0; k < c; k++) put(bpp === 8 ? src[i + k] : (k & 1 ? src[i + (k >> 1)] & 15 : src[i + (k >> 1)] >> 4)); const used = bpp === 8 ? c : (c + 1) >> 1; i += used + (used & 1); }
+    }
+    return out;
+  }
+  function dibToRgba(bmi, bits) {
+    const dv = new DataView(bmi.buffer, bmi.byteOffset, bmi.byteLength);
+    const hs = dv.getUint32(0, true);
+    let w, h, bpp, comp = 0, nCol = 0;
+    if (hs === 12) { w = dv.getUint16(4, true); h = dv.getInt16(6, true); bpp = dv.getUint16(10, true); }
+    else { w = dv.getInt32(4, true); h = dv.getInt32(8, true); bpp = dv.getUint16(14, true); comp = dv.getUint32(16, true); nCol = hs >= 36 ? dv.getUint32(32, true) : 0; }
+    if (comp === 4) return { mime: 'image/jpeg', raw: bits };
+    if (comp === 5) return { mime: 'image/png', raw: bits };
+    if (comp !== 0 && comp !== 3 && comp !== 1 && comp !== 2) return null;
+    const top = h < 0; h = Math.abs(h);
+    if (comp === 1 || comp === 2) { bits = unRle(bits, w, h, comp === 1 ? 8 : 4); if (!bits) return null; comp = 0; }
+    if (!w || !h || w * h > 25e6) return null;
+    let masks = null, palOff = hs;
+    if (comp === 3) { if (hs === 40) { masks = [dv.getUint32(40, true), dv.getUint32(44, true), dv.getUint32(48, true)]; palOff = 52; } else masks = [dv.getUint32(40, true), dv.getUint32(44, true), dv.getUint32(48, true)]; }
+    const pal = [];
+    if (bpp <= 8) { const n = nCol || (1 << bpp), es = hs === 12 ? 3 : 4; for (let k = 0; k < n && palOff + k * es + 2 < bmi.length; k++) pal.push([bmi[palOff + k * es + 2], bmi[palOff + k * es + 1], bmi[palOff + k * es]]); }
+    const stride = ((w * bpp + 31) >> 5) << 2, px = new Uint8ClampedArray(w * h * 4);
+    const sh = (m) => { let s = 0; if (!m) return [0, 0]; while (!((m >> s) & 1)) s++; let n = 0; while ((m >> (s + n)) & 1) n++; return [s, n]; };
+    const ms = masks ? masks.map(sh) : null;
+    const bv = new DataView(bits.buffer, bits.byteOffset, bits.byteLength);
+    let alphaUsed = false;
+    for (let yy = 0; yy < h; yy++) {
+      const row = (top ? yy : h - 1 - yy) * stride; if (row + stride > bits.length + 3) break;
+      for (let xx = 0; xx < w; xx++) {
+        const o = (yy * w + xx) * 4; let r = 0, g = 0, bb = 0, a = 255;
+        if (bpp === 24) { const q = row + xx * 3; bb = bits[q]; g = bits[q + 1]; r = bits[q + 2]; }
+        else if (bpp === 32) { const q = row + xx * 4; if (ms) { const v = bv.getUint32(q, true); const c = (m, k) => { const [s, n] = ms[k]; return n ? Math.round(((v & m) >>> s) * 255 / ((1 << n) - 1)) : 0; }; r = c(masks[0], 0); g = c(masks[1], 1); bb = c(masks[2], 2); } else { bb = bits[q]; g = bits[q + 1]; r = bits[q + 2]; a = bits[q + 3]; if (a) alphaUsed = true; } }
+        else if (bpp === 16) { const v = bits[row + xx * 2] | (bits[row + xx * 2 + 1] << 8); if (ms) { const c = (k) => { const [s, n] = ms[k]; return n ? Math.round(((v & masks[k]) >>> s) * 255 / ((1 << n) - 1)) : 0; }; r = c(0); g = c(1); bb = c(2); } else { r = ((v >> 10) & 31) * 255 / 31; g = ((v >> 5) & 31) * 255 / 31; bb = (v & 31) * 255 / 31; } }
+        else { const per = 8 / bpp, byte = bits[row + Math.floor(xx / per)], idx = (byte >> (8 - bpp * (xx % per + 1))) & ((1 << bpp) - 1); const c = pal[idx] || [idx * 255 / ((1 << bpp) - 1), idx * 255 / ((1 << bpp) - 1), idx * 255 / ((1 << bpp) - 1)]; r = c[0]; g = c[1]; bb = c[2]; }
+        px[o] = r; px[o + 1] = g; px[o + 2] = bb; px[o + 3] = a;
+      }
+    }
+    if (bpp === 32 && !ms && !alphaUsed) for (let k = 3; k < px.length; k += 4) px[k] = 255;
+    return { w, h, px };
+  }
+  const ROP_AND = 0x8800C6, ROP_OR = 0xEE0086;
+  function dibToDataUri(bm, mask) {
+    const d = dibToRgba(bm.bmi, bm.bits);
+    if (!d) return null;
+    if (d.raw) return 'data:' + d.mime + ';base64,' + u8ToBase64(d.raw);
+    const lum = (a, k) => (a[k] + a[k + 1] + a[k + 2]) / 3;
+    if (mask && mask.w === d.w && mask.h === d.h) { for (let k = 0; k < d.px.length; k += 4) if ((lum(mask.px, k) > 127) !== !!mask.whiteOpaque) d.px[k + 3] = 0; }
+    else if (bm.rop === ROP_AND) { for (let k = 0; k < d.px.length; k += 4) if (lum(d.px, k) > 250) d.px[k + 3] = 0; }   // AND với nền: trắng = trong suốt
+    else if (bm.rop === ROP_OR) { for (let k = 0; k < d.px.length; k += 4) if (lum(d.px, k) < 5) d.px[k + 3] = 0; }      // OR với nền: đen = trong suốt
+    if (typeof document !== 'undefined') {
+      try {
+        const cv = document.createElement('canvas'); cv.width = d.w; cv.height = d.h;
+        cv.getContext('2d').putImageData(new ImageData(d.px, d.w, d.h), 0, 0);
+        let u = cv.toDataURL('image/png');
+        if (u.length > 700000) { const j = cv.toDataURL('image/jpeg', 0.85); if (j.length < u.length) u = j; }
+        return u;
+      } catch (e) { /* dùng BMP */ }
+    }
+    // BMP 32 bit (môi trường không có canvas)
+    const fileSize = 14 + 40 + d.w * d.h * 4, buf = new Uint8Array(fileSize), v = new DataView(buf.buffer);
+    buf[0] = 66; buf[1] = 77; v.setUint32(2, fileSize, true); v.setUint32(10, 54, true);
+    v.setUint32(14, 40, true); v.setInt32(18, d.w, true); v.setInt32(22, -d.h, true); v.setUint16(26, 1, true); v.setUint16(28, 32, true);
+    for (let k = 0; k < d.w * d.h; k++) { buf[54 + 4 * k] = d.px[4 * k + 2]; buf[55 + 4 * k] = d.px[4 * k + 1]; buf[56 + 4 * k] = d.px[4 * k]; buf[57 + 4 * k] = d.px[4 * k + 3]; }
+    return 'data:image/bmp;base64,' + u8ToBase64(buf);
+  }
+  function emfToDataUri(u8) {
+    const r = emfToSvg(u8);
+    let svg = r.svg;
+    const bm = r.bitmaps, drop = (i) => { svg = svg.replace(new RegExp('<image[^>]*__BMP' + i + '__[^>]*/>'), ''); };
+    for (let i = 0; i < bm.length; i++) {
+      // cặp mặt nạ + ảnh vẽ chồng cùng chỗ (OR mặt nạ rồi AND ảnh, hoặc AND mặt nạ rồi OR ảnh) → 1 ảnh nền trong suốt
+      const nx = bm[i + 1];
+      if (nx && nx.dest === bm[i].dest && ((bm[i].rop === ROP_OR && nx.rop === ROP_AND) || (bm[i].rop === ROP_AND && nx.rop === ROP_OR))) {
+        const mask = dibToRgba(bm[i].bmi, bm[i].bits); if (mask) mask.whiteOpaque = bm[i].rop === ROP_OR; // mặt nạ OR: trắng = phần ảnh; mặt nạ AND: trắng = trong suốt
+        drop(i); const u = dibToDataUri(nx, mask && !mask.raw ? mask : null);
+        if (u) svg = svg.replace('__BMP' + (i + 1) + '__', u); else drop(i + 1);
+        i++; continue;
+      }
+      const u = dibToDataUri(bm[i]);
+      if (u) svg = svg.replace('__BMP' + i + '__', u); else drop(i);
+    }
+    return { src: svgDataUri(svg), w: r.w, h: r.h, svg };
+  }
+  async function gunzip(u8) {
+    const ds = new DecompressionStream('gzip');
+    return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer());
+  }
+
   /* ----------------------------- DOCX parse ----------------------------- */
   const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
   const ln = (el) => el.localName;
@@ -332,7 +669,10 @@
         if (!data) return null;
         const ext = (path.split('.').pop() || '').toLowerCase();
         let src = null, w = 0, h = 0;
-        if (ext === 'wmf') { try { const r = wmfToSvg(data); src = svgDataUri(r.svg); w = r.w; h = r.h; } catch (e) { warnings.push('Không vẽ được công thức ' + path); } }
+        let ext2 = ext, data2 = data;
+        if (ext === 'emz' || ext === 'wmz') { try { data2 = await gunzip(data); ext2 = ext === 'emz' ? 'emf' : 'wmf'; } catch (e) { ext2 = ext; } }
+        if (ext2 === 'wmf') { try { const r = wmfToSvg(data2); src = svgDataUri(r.svg); w = r.w; h = r.h; } catch (e) { warnings.push('Không vẽ được công thức ' + path); } }
+        else if (ext2 === 'emf') { try { const r = emfToDataUri(data2); src = r.src; w = r.w; h = r.h; } catch (e) { warnings.push('Ảnh .emf (' + path.split('/').pop() + ') không vẽ lại được (' + e.message + ') — nên chèn lại dạng PNG/JPG.'); } }
         else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'bmp' || ext === 'svg' || ext === 'webp') {
           const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : 'image/' + ext;
           src = 'data:' + mime + ';base64,' + u8ToBase64(data);
@@ -679,7 +1019,7 @@
     return { name: (fileName || 'De').replace(/\.docx$/i, ''), questions: result, groups: outGroups, warnings };
   }
 
-  const api = { readZip, parseDocx, wmfToSvg, mapChar };
+  const api = { readZip, parseDocx, wmfToSvg, emfToSvg, emfToDataUri, mapChar };
   root.QuizDocx = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
