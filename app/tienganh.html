@@ -227,8 +227,10 @@
         <label class="check"><input type="checkbox" id="autoRef" checked> Tự cập nhật</label>
         <button class="btn sm" id="btnRefresh">Cập nhật</button>
         <button class="btn sm" id="btnToggle"></button>
+        <label class="row" style="gap:6px;margin:0" title="Cách tính điểm của mỗi em khi làm nhiều lần (tính cả lần làm thêm) — dùng cho bảng tóm tắt và cột Điểm trong file Excel"><span class="hint" style="margin:0">Điểm xuất ra:</span><select id="exPolicy" style="width:auto;max-width:210px;padding-top:6px;padding-bottom:6px"><option value="">Theo cài đặt đề</option><option value="avg">Trung bình các lần</option><option value="max">Lần cao nhất</option><option value="last">Lần cuối cùng</option><option value="first">Lần đầu tiên</option></select></label>
         <button class="btn accent" id="btnExport">Xuất Excel</button>
       </div>
+      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap" title="Dùng để xét em nào vào muộn (chỉ xét lần làm thứ 1)"><span class="hint" style="margin:0"><b>Giờ thi:</b></span><input type="datetime-local" id="exStart" style="width:auto;padding-top:5px;padding-bottom:5px"><span class="hint" style="margin:0">cho phép muộn</span><input type="number" id="exLate" value="5" min="0" style="width:64px;padding-top:5px;padding-bottom:5px"><span class="hint" style="margin:0">phút</span><span class="hint" style="margin:0" id="exStartSrc"></span></div>
       <div class="grid g4" id="stats" style="margin-top:14px"></div>
       <div id="progressBox"></div>
       <div class="scroll" style="margin-top:12px"><table class="tbl" id="resTbl"></table></div>
@@ -257,7 +259,7 @@
 
 <div class="modal-bg" id="modal"><div class="modal" id="modalBody"></div></div>
 
-<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v2.4</span></div></footer>
+<footer class="foot"><div class="wrap row"><div id="authorBox"></div><span class="spacer"></span><span>Trộn đề thi Online · v2.6</span></div></footer>
 
 <script src="js/config.js"></script>
 <script src="js/common.js"></script>

@@ -228,3 +228,5 @@ img.drvimg { max-width: 100%; height: auto; display: block; margin: 6px auto; bo
 /* v2.3: tên trùng nhau ở bảng kết quả */
 .tbl td.dupR, .dupR { background: #ff8a8a; color: #4a0000; }
 .tbl td.dupY, .dupY { background: #fff066; color: #3a2a00; }
+/* v2.6: bảng kết quả — tên học sinh trên một dòng */
+#resTbl td:nth-child(2) { white-space: nowrap; }

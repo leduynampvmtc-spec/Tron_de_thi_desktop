@@ -272,7 +272,9 @@ function submit_(req) {
     var attemptNo = +r[14] || 1;
     if (req.reason) notes.push(req.reason);
     var viol = +req.violations || 0;
-    var detail = JSON.stringify({ seed: r[2], answers: req.answers || [], d: g.details.map(function (d) { return d.type === 'mc' ? [d.b, d.q, d.chosen, d.ok ? 1 : 0] : d.type === 'fill' ? [d.b, d.q, d.given, d.oks.map(function (x) { return x ? 1 : 0; })] : d.type === 'speak' ? [d.b, d.q, { rec: d.rec, dur: d.dur }] : [d.b, d.q, d.text]; }), log: (req.log || []).slice(0, 200) });
+    // Nhật ký vi phạm: [loại, câu (0-based), thời điểm] — để giáo viên biết em vi phạm gì, lúc nào
+    var vl = (req.log || []).filter(function (e) { return e && e.v; }).slice(-60).map(function (e) { return [String(e.v).slice(0, 40), e.i == null ? null : +e.i, +e.t || 0]; });
+    var detail = JSON.stringify({ seed: r[2], vl: vl, answers: req.answers || [], d: g.details.map(function (d) { return d.type === 'mc' ? [d.b, d.q, d.chosen, d.ok ? 1 : 0] : d.type === 'fill' ? [d.b, d.q, d.given, d.oks.map(function (x) { return x ? 1 : 0; })] : d.type === 'speak' ? [d.b, d.q, { rec: d.rec, dur: d.dur }] : [d.b, d.q, d.text]; }), log: (req.log || []).slice(0, 200) });
     resSh.appendRow([req.attemptId, r[1], r[3], r[4], r[5], g.score, g.mcRight, g.mcCount, g.mcEarned, g.essayEarned, g.max,
       g.essayCount ? (g.essayPending ? 'Chưa chấm ' + g.essayPending + ' câu' : 'Đã chấm') : '', startedAt, now, secs, viol, notes.join('; '), detail.slice(0, 49000), '{}', attemptNo, g.skills ? JSON.stringify({ s: g.skills, t: g.toeic || null }) : '']);
     sh.getRange(row, 8, 1, 2).setValues([['Đã nộp', now]]);
@@ -429,7 +431,7 @@ function caiDat() {
  * core.js — Lõi trộn đề / chấm điểm (dùng chung cho trình duyệt và
  * máy chủ Google Apps Script). Phần mềm: Lê Duy Nam — GV Trường CĐ Dầu khí
  * ===================================================================== */
-var QC_VERSION = '2.3';
+var QC_VERSION = '2.6';
 
 function QC_hash(str) {
   var h1 = 0xdeadbeef ^ 0, h2 = 0x41c6ce57 ^ 0;

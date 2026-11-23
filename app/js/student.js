@@ -318,7 +318,7 @@
         if (l <= 0) {
           clearInterval(myH); S.log.push({ i, timeout: 1 });
           if (end && srvNow() >= end - 500) submit('Hết giờ làm bài');
-          else if (i === n - 1) submit('Hết giờ');
+          else if (i === n - 1) submit('Hết giờ câu cuối');
           else setTimeout(() => next(true), 0);
         }
       };
